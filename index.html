@@ -625,42 +625,42 @@ const CLASSES = {
   jumper: {
     id:"jumper", name:"Jumper", role:"All-Rounder", icon:"❤", c:"#ff3b3b", c2:"#1e7bff",
     desc:"Balanced movement and clean platforming. Reliable in any fight.",
-    ability:"Power Jump", special:"Sky Recovery", specialDir:"up", hp:110, speed:280, jump:1000, startWeapon:"m_club", startHeal:1,
+    ability:"Power Jump", special:"Sky Recovery", specialDir:"up", hp:110, speed:280, jump:1000, startWeapon:"m_club", startHeal:1, power:1.0, armor:1.0, cdMult:1.0,
   },
   blaster: {
     id:"blaster", name:"Blaster", role:"Ranged Shooter", icon:"◎", c:"#00c8ff", c2:"#f2f7ff",
     desc:"Precision energy weapons and strong ranged pressure. Dashes to reposition.",
-    ability:"Energy Dash", special:"Charge Cannon", specialDir:"side", hp:95, speed:270, jump:950, startWeapon:"m_baton", startHeal:0,
+    ability:"Energy Dash", special:"Charge Cannon", specialDir:"side", hp:95, speed:270, jump:950, startWeapon:"m_baton", startHeal:0, power:1.15, armor:1.05, cdMult:0.9,
   },
   ninja: {
     id:"ninja", name:"Ninja", role:"Mobility / Melee", icon:"✦", c:"#e8324a", c2:"#1b1b26",
     desc:"Dash-slash assassin. Punishes anyone who lets you get close.",
-    ability:"Dash Slash", special:"Shadow Step", specialDir:"side", hp:95, speed:315, jump:1060, startWeapon:"m_katana", startHeal:0,
+    ability:"Dash Slash", special:"Shadow Step", specialDir:"side", hp:95, speed:315, jump:1060, startWeapon:"m_katana", startHeal:0, power:1.1, armor:1.05, cdMult:0.85,
   },
   builder: {
     id:"builder", name:"Builder", role:"Utility", icon:"◫", c:"#ffb000", c2:"#00d7b9",
     desc:"Deploys hard-light walls for instant cover. Controls the fight with structures.",
-    ability:"Build Wall", special:"Ramp Forge", specialDir:"side", hp:105, speed:265, jump:960, startWeapon:"m_wrench", startHeal:1,
+    ability:"Build Wall", special:"Ramp Forge", specialDir:"side", hp:105, speed:265, jump:960, startWeapon:"m_wrench", startHeal:1, power:0.9, armor:0.9, cdMult:0.8,
   },
   tank: {
     id:"tank", name:"Tank", role:"Defense", icon:"⬢", c:"#6abe30", c2:"#2f4530",
     desc:"Heavy anchor. Overshields on demand and slams down a barricade.",
-    ability:"Shield Wall", special:"Bull Rush", specialDir:"side", hp:145, speed:225, jump:860, startWeapon:"m_slab", startHeal:1,
+    ability:"Shield Wall", special:"Bull Rush", specialDir:"side", hp:145, speed:225, jump:860, startWeapon:"m_slab", startHeal:1, power:1.0, armor:0.75, cdMult:1.15,
   },
   skater: {
     id:"skater", name:"Skater", role:"Speed", icon:"⚡", c:"#b84dff", c2:"#31e85a",
     desc:"Fastest hero on the island. Hover-dashes across gaps and out of trouble.",
-    ability:"Hover Dash", special:"Rail Grind", specialDir:"up", hp:90, speed:335, jump:990, startWeapon:"m_deck", startHeal:0,
+    ability:"Hover Dash", special:"Rail Grind", specialDir:"up", hp:90, speed:335, jump:990, startWeapon:"m_deck", startHeal:0, power:0.9, armor:1.15, cdMult:0.9,
   },
   mage: {
     id:"mage", name:"Mage", role:"Portal / Control", icon:"◍", c:"#8a5cff", c2:"#ffd166",
     desc:"Arcane-tech caster. Blinks through a portal gate to reposition instantly.",
-    ability:"Portal Gate", special:"Gravity Well", specialDir:"side", hp:95, speed:265, jump:950, startWeapon:"m_staff", startHeal:1,
+    ability:"Portal Gate", special:"Gravity Well", specialDir:"side", hp:95, speed:265, jump:950, startWeapon:"m_staff", startHeal:1, power:1.05, armor:1.0, cdMult:0.95,
   },
   demolitionist: {
     id:"demolitionist", name:"Demolitionist", role:"Explosives", icon:"✸", c:"#ff7a1a", c2:"#20160f",
     desc:"Launches rocket bursts that break builds and blow open fights.",
-    ability:"Rocket Burst", special:"Rocket Jump", specialDir:"up", hp:110, speed:255, jump:930, startWeapon:"m_pipe", startHeal:0,
+    ability:"Rocket Burst", special:"Rocket Jump", specialDir:"up", hp:110, speed:255, jump:930, startWeapon:"m_pipe", startHeal:0, power:1.2, armor:0.95, cdMult:1.05,
   },
 };
 
@@ -1645,8 +1645,8 @@ function shotSfx(e,wpn){ if(e.kind!=="player") return;
 const MUSIC=(()=>{
   let c=null,g=null,on=PREFS.get("music"),timer=null,step=0,next=0;
   const bpm=112, spb=60/bpm/2; // 8th-note grid
-  const bass=[38,38,45,45,41,41,36,43];
-  const arp =[62,65,69,72, 60,64,67,71, 58,62,65,69, 57,60,64,67];
+  // i - VI - III - VII synthwave progression (Am F C G), one triad per bar
+  const CHORDS=[[45,48,52],[41,45,48],[48,52,55],[43,47,50]];
   const f=m=>440*Math.pow(2,(m-69)/12);
   function ac(){ if(!c){ try{ c=new (window.AudioContext||window.webkitAudioContext)();
     g=c.createGain(); g.gain.value=0.15; g.connect(c.destination); }catch(e){} } return c; }
@@ -1662,13 +1662,21 @@ const MUSIC=(()=>{
     const src=c.createBufferSource(), n=c.createGain();
     src.buffer=b; n.gain.value=0.10; src.connect(n); n.connect(g); src.start(t);
   }catch(e){} }
+  function kick(t){ try{
+    const o=c.createOscillator(), n=c.createGain();
+    o.type="sine"; o.frequency.setValueAtTime(115,t); o.frequency.exponentialRampToValueAtTime(45,t+0.12);
+    n.gain.setValueAtTime(0.42,t); n.gain.exponentialRampToValueAtTime(0.001,t+0.16);
+    o.connect(n); n.connect(g); o.start(t); o.stop(t+0.18);
+  }catch(e){} }
   function tick(){ if(!c) return;
-    while(next < c.currentTime+0.18){
-      const st=step%16;
-      if(st%2===0) note(next, f(bass[(st/2)|0]), spb*0.9, "square", 0.18);
-      note(next, f(arp[st]), spb*0.55, "triangle", 0.085);
-      if(st%4===2) hat(next);
-      if(st===0)  note(next, f(bass[0])/2, spb*4, "sawtooth", 0.05);
+    while(next < c.currentTime+0.20){
+      const st=step%32, bar=st>>3, ch=CHORDS[bar%4], beat=st%8;
+      if(st%2===0) note(next, f(ch[0]-12), spb*0.9, "square", 0.16);        // bass pulse
+      if(beat===0) note(next, f(ch[0]-24), spb*8, "sine", 0.075);           // sub on the downbeat
+      note(next, f(ch[st%3]+12), spb*0.5, "triangle", 0.065);              // arpeggiated triad
+      if(st%4===0) kick(next);                                              // four-on-the-floor
+      if(st%2===1) hat(next);                                               // offbeat hats
+      if(bar>=2 && (beat===0||beat===3||beat===6)) note(next, f(ch[beat%3]+24), spb*1.2, "sawtooth", 0.045); // lead
       next+=spb; step++;
     }
   }
@@ -2722,7 +2730,19 @@ function telemetryStepPlayer(p,dt){
 function giveWeapon(e, wid){
   saveWeaponAmmo(e);
   if(e.weapons.length<3){ e.weapons.push(wid); e.wi=e.weapons.length-1; }
-  else { e.weapons[e.wi]=wid; }
+  else {
+    // full inventory: SWAP — drop the replaced weapon so it isn't lost (soul-bound starter melee never drops)
+    let slot=e.wi;
+    if(WEAPONS[e.weapons[slot]] && WEAPONS[e.weapons[slot]].starter){
+      const alt=e.weapons.findIndex(w=>!(WEAPONS[w] && WEAPONS[w].starter));
+      if(alt>=0) slot=alt;
+    }
+    const old=e.weapons[slot];
+    if(old && !(WEAPONS[old] && WEAPONS[old].starter) && typeof G!=="undefined" && G.loot){
+      const l=makeLoot(old, e.x+e.w/2-14, e.y-8, false); l.vy=-180; G.loot.push(l);
+    }
+    e.weapons[slot]=wid; e.wi=slot;
+  }
   e.ammoByWeapon=e.ammoByWeapon||{}; e.ammoByWeapon[wid]=WEAPONS[wid].mag;
   e.ammo=WEAPONS[wid].mag; e.reloading=0; e.burst=null;
   if(!WEAPONS[wid].melee)e.armed=true;
@@ -3478,6 +3498,8 @@ function applyDamage(e,dmg,from,source=null){
   if(e.bull) dmg*=0.4;      // Bull Rush armored charge (-60%)
   if(e.softT>0) dmg*=0.7;   // brief airborne-from-impulse/pad damage falloff (mobility = defense)
   if(e.pu && e.pu.id==="mega") dmg*=0.7;
+  if(from && from.cls && CLASSES[from.cls]) dmg*=(CLASSES[from.cls].power||1);   // attacker class POWER
+  if(e.cls && CLASSES[e.cls]) dmg*=(CLASSES[e.cls].armor||1);                    // victim class TOUGHNESS
   if(from) from.damage+=dmg;
   if((e===G.player||from===G.player)&&MATCH_METRICS.firstContact===null) MATCH_METRICS.firstContact=G.elapsed;
   if(from===G.player&&source?.kind==="weapon"&&source.id){ const m=MATCH_METRICS.weapon(source.id); m.hits++; m.damage+=dmg; }
@@ -3520,11 +3542,17 @@ function eliminate(e, from){
   if(from && from.kind==="bot" && Math.random()<0.3) from.emote={t:1.6, s:choice(EMOTES)};
   if(feed.length>5) feed.pop();
   SFX.down();
-  // drop its best weapon (starter melees are soul-bound — never dropped)
-  if(e.weapons.length){
-    const best=[...e.weapons].reverse().find(w=>!WEAPONS[w].starter);
-    if(best) G.loot.push(makeLoot(best, e.x+e.w/2-14, e.y, false));
+  // drop loot: every non-starter weapon + a slice of carried consumables (soul-bound starter melee stays)
+  if(e.weapons && e.weapons.length){
+    let ox=-22;
+    for(const w of e.weapons){ if(WEAPONS[w] && WEAPONS[w].starter) continue;
+      const l=makeLoot(w, e.x+e.w/2+ox, e.y-4, false); l.vy=rand(-240,-140); G.loot.push(l); ox+=22; }
   }
+  const dropItem=(id,n)=>{ if(!CONSUMABLES[id]||n<=0) return; for(let i=0;i<n;i++){ const l=makeLoot(id, e.x+e.w/2+rand(-26,26), e.y-4, true); l.vy=rand(-220,-110); G.loot.push(l); } };
+  dropItem("shield", Math.min(2, e.shields||0));
+  dropItem("heal",   Math.min(2, e.heals||0));
+  dropItem("frag",   Math.min(2, e.nades||0));
+  if((e.bigshields||0)>0) dropItem("bigshield", 1);
   if(e.kind==="player"){
     // death flow: ragdoll tumble -> voxel burst -> SPECTATE (results screen only on leave / match end)
     G.deathSeq={ x:e.x+e.w/2, y:e.y+e.h/2, vx:(e.vx||0)*0.4+rand(-60,60), vy:Math.min(e.vy,-360),
@@ -3568,6 +3596,16 @@ function aimPoint(e){
   const t=e.ai && e.ai.target;
   if(t && t.alive && e.ai.mode==="fight") return { x:t.x+t.w/2, y:t.y+t.h/2 };
   return { x:G.safe.x+G.safe.w/2, y:G.safe.y+G.safe.h/2 };
+}
+function abilityJuice(e, col){
+  // shared "feel" layer for every ability + special: ring pulse, particle burst, shake, hitstop
+  const cx=e.x+e.w/2, cy=e.y+e.h/2;
+  spawnParts(cx, cy, col||"#ffffff", 18);
+  if(G.rings) G.rings.push({ x:cx, y:cy, r:9, t:0.4, c:col||"#ffffff", sp:440, lw:3 });
+  if(e===G.player){
+    if(G.shakeOn) G.shake=Math.min(15, (G.shake||0)+5);
+    G.hitstop=Math.max(G.hitstop||0, 0.03);
+  }
 }
 function useSpecial(e,c){
   // Smash-style directional special — shares the class cooldown meter (~x1.3 cost)
@@ -3647,7 +3685,7 @@ function useAbility(e, dir){
   if(e.abilityCd>0 || e.chargeCast || e.bull) return;
   if(e.kind==="player") ONBOARD.tip("ability");
   const cl=CLASSES[e.cls];
-  if(dir && dir===cl.specialDir && useSpecial(e, cl)){ if(e.kind==="player") SFX.ability(); return; }
+  if(dir && dir===cl.specialDir && useSpecial(e, cl)){ e.abilityCd*=(cl.cdMult||1); abilityJuice(e, cl.c); if(e.kind==="player") SFX.ability(); return; }
   const a=CLASSES[e.cls].ability;
   if(a==="Power Jump"){ e.vy=-1500; e.abilityCd=6; spawnParts(e.x+e.w/2,e.y+e.h,"#ff3b3b",12); }
   else if(a==="Energy Dash"){ e.vx=e.face*720; e.vy=Math.min(e.vy,-120); e.iframes=0.35; e.abilityCd=5;
@@ -3692,6 +3730,8 @@ function useAbility(e, dir){
       color:"#ff7a1a", glow:"#ffd166", life:1.6, aoe:90, r:5, trail:true });
     e.abilityCd=6;
   }
+  e.abilityCd*=(cl.cdMult||1);
+  abilityJuice(e, cl.c);
   if(e.kind==="player") SFX.ability();
 }
 function useHeal(e){
@@ -7275,9 +7315,16 @@ function drawInventory(p){
     if(i===p.wi){ ctx.shadowColor="#00d9ff"; ctx.shadowBlur=10; } ctx.stroke(); ctx.shadowBlur=0;
     ctx.fillStyle="#7f93bd"; ctx.font="10px 'Rajdhani'"; ctx.textAlign="left"; ctx.fillText((i+1), x+4, y+12);
     if(wid){ const wp=WEAPONS[wid], rc=RARITY[wp.rarity];
-      ctx.fillStyle=rc.c; ctx.shadowColor=rc.glow; ctx.shadowBlur=6; ctx.font="18px 'Rajdhani'"; ctx.textAlign="center";
-      ctx.fillText(WEAPON_ICONS[wid]||"▪", x+slotW/2, y+26); ctx.shadowBlur=0;
-      ctx.fillStyle="#c8d6f5"; ctx.font="8px 'Rajdhani'"; ctx.fillText(wp.name.split(" ")[0], x+slotW/2, y+40);
+      const art=ASSETS["weapon_"+wid];
+      if(art&&art.img){
+        const iw=art.img.width||1, ih=art.img.height||1, s=Math.min((slotW-10)/iw, 22/ih), dw=iw*s, dh=ih*s;
+        ctx.save(); ctx.shadowColor=rc.glow; ctx.shadowBlur=7;
+        ctx.drawImage(art.img, x+slotW/2-dw/2, y+18-dh/2, dw, dh); ctx.restore();
+      } else {
+        ctx.fillStyle=rc.c; ctx.shadowColor=rc.glow; ctx.shadowBlur=6; ctx.font="18px 'Rajdhani'"; ctx.textAlign="center";
+        ctx.fillText(WEAPON_ICONS[wid]||"▪", x+slotW/2, y+26); ctx.shadowBlur=0;
+      }
+      ctx.fillStyle="#c8d6f5"; ctx.font="8px 'Rajdhani'"; ctx.textAlign="center"; ctx.fillText(wp.name.split(" ")[0], x+slotW/2, y+40);
     }
   }
   // ammo (above selected)
@@ -7742,6 +7789,20 @@ function pollMenuGamepad(dt){
     }
   }catch(e){}
 }
+function classStatBars(c){
+  // normalize each stat to 0..1 across the roster's real range, then draw a mini bar
+  const N=(v,lo,hi)=>Math.max(0,Math.min(1,(v-lo)/(hi-lo)));
+  const rows=[
+    ["HP",   N(c.hp,80,150)],
+    ["SPD",  N(c.speed,210,340)],
+    ["JUMP", N(c.jump,840,1070)],
+    ["PWR",  N(c.power||1,0.85,1.25)],
+    ["DEF",  N(1.25-(c.armor||1),0,0.5)],
+  ];
+  return `<div class="statBars" style="margin-top:6px">`+rows.map(([lab,v])=>
+    `<div style="display:flex;align-items:center;gap:5px;margin-top:2px"><span style="width:30px;font-size:8px;color:#8ea6d6;letter-spacing:.5px">${lab}</span><span style="flex:1;height:5px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden"><span style="display:block;height:100%;width:${Math.round(v*100)}%;background:${c.c}"></span></span></div>`
+  ).join("")+`</div>`;
+}
 function buildCards(){
   const wrap=document.getElementById("cards"); wrap.innerHTML="";
   for(const id of Object.keys(CLASSES)){
@@ -7771,7 +7832,7 @@ function buildCards(){
       <div class="desc">${c.desc}</div>
       <div class="abil">Ability: <span>${c.ability}</span></div>
       <div class="abil">Special: <span>${c.special}</span> <span style="opacity:.7">(${c.specialDir==="up"?"\u2191":"\u2190\u2192"} + ability)</span></div>
-      <div class="abil" style="margin-top:6px;color:#7f93bd">HP ${c.hp} · SPD ${c.speed}</div>`;
+      ${classStatBars(c)}`;
     const choose=()=>{ G.chosen=id; if(!playSfx("ui_select",{vol:0.5})) SFX.pickup(); buildCards(); };
     card.onclick=choose;
     card.onkeydown=(e)=>{
