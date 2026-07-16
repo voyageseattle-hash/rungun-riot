@@ -749,7 +749,7 @@ const WORLDGEN=(()=>{
       // dense city: tight rows + solid buildings with rooftop decks
       for(let i=0;i<9;i++){ const y=2400-i*135;
         for(let x=x0+((i%2)*110); x<x1-200; x+=250+R()*70) L(x, y, 170+R()*70); }
-      for(const bx of [x0+120, x0+520, x0+880]){
+      for(const bx of [x0+30, x0+435, x0+880]){
         const bh=220+R()*220; S(bx, 2540-bh, 130, bh-100); L(bx-16, 2540-bh-2, 162); } // arched at street level
     }
     else if(n==="PIXEL PEAK"){
@@ -777,7 +777,7 @@ const WORLDGEN=(()=>{
         L(x, 2290 - Math.sin(x*0.006)*150, 160+R()*60);
         L(x+90, 1830 - Math.sin(x*0.0075+2)*130, 150+R()*50);
       }
-      S(x0+540, 2460, 260, 80, true); plateaus.push([x0+540,2460,260,80]);  // gentle hill
+      S(x0+370, 2460, 200, 80, true); plateaus.push([x0+370,2460,200,80]);  // gentle hill, west of the shaft
       waters.push([x0+180, 2510, 180, 30]);
     }
     else if(n==="CRYSTAL COVE"){
@@ -795,14 +795,14 @@ const WORLDGEN=(()=>{
 const LATTICE=WORLDGEN.led;   // crates + culling keep working off this
 const WATERS=WORLDGEN.waters;
 /* ---------------- District hazards (each district fights back) ---------------- */
-const JUMP_PADS=[ {x:2560,y:2516,w:80,h:24},{x:2990,y:2516,w:80,h:24},{x:3330,y:2516,w:80,h:24} ];   // Neon Nexus
+const JUMP_PADS=[ {x:2560,y:2516,w:80,h:24},{x:2799,y:2516,w:80,h:24},{x:3330,y:2516,w:80,h:24} ];   // Neon Nexus
 const LAVA_POOLS=[ [3780,2414,140,16],[4430,2309,130,16],[4300,2199,110,16],[4060,2094,120,16],
   [4052,1984,56,16],[4292,1984,56,16] ];   // Pixel Peak terraces + CALDERA VAULT rim ring
-const GLADES=[ [7760,2436,220,24] ];                                                                  // Circuit Gardens hill
-const BRAMBLES=[ [7350,2506,160,34],[8050,2506,180,34] ];                                             // Gardens street
+const GLADES=[ [7660,2436,160,24] ];                                                                  // Circuit Gardens hill
+const BRAMBLES=[ [8050,2506,180,34] ];                                             // Gardens street
 const BOOMER_SPOTS=[ // Junkyard barrels + Boomtown TNT crates (chain reactions)
-  {x:260,type:"barrel"},{x:480,type:"barrel"},{x:760,type:"barrel"},{x:980,type:"barrel"},{x:1120,type:"barrel"},
-  {x:6120,type:"tnt"},{x:6360,type:"tnt"},{x:6640,type:"tnt"},{x:6900,type:"tnt"},{x:7160,type:"tnt"},
+  {x:175,type:"barrel"},{x:480,type:"barrel"},{x:760,type:"barrel"},{x:980,type:"barrel"},{x:1120,type:"barrel"},
+  {x:6120,type:"tnt"},{x:6360,type:"tnt"},{x:6600,type:"tnt"},{x:6900,type:"tnt"},{x:7160,type:"tnt"},
 ];
 function initHazards(){
   G.boomers=BOOMER_SPOTS.map(sp=>({ x:sp.x, y:2540-(sp.type==="tnt"?26:30), w:sp.type==="tnt"?28:20, h:sp.type==="tnt"?26:30,
@@ -905,7 +905,8 @@ const PROP_SPOTS=(()=>{ const R=mulberry32(777), out=[];
 const ULAT=(()=>{ const a=[];
   for(let i=0;i<=4;i++){ const y=3680-i*140, off=(i%2? 120:330);
     for(let x=off; x<W-280; x+=420) a.push([x,y]); }
-  return a; })();
+  // keep the two basement pocket-room footprints (arcade/garage) clear of lattice ledges
+  return a.filter(([x,y])=> y<3500 || !((x+240>2160&&x<2640)||(x+240>6160&&x<6640))); })();
 function buildWorld(){
   const P = [];
   const add=(x,y,w,h,o=false,type=null,destruct=false)=>{
@@ -930,6 +931,11 @@ function buildWorld(){
       if(VENDORS.some(v=>Math.abs(cx-v.x)<140)) continue;
       if(SHAFTS.some(s=>Math.abs(cx-s)<170)) continue;
       if(BOOMER_SPOTS.some(b=>Math.abs(cx-b.x)<90)) continue;
+      if(JUMP_PADS.concat(BOUNCES).some(pd=>Math.abs(cx-(pd.x+pd.w/2))<130)) continue;
+      if(TUBES.some(t=>(t.ay===2540&&Math.abs(cx-t.ax)<130)||(t.by===2540&&Math.abs(cx-t.bx)<130))) continue;
+      if(Math.abs(cx-2965)<130||Math.abs(cx-6565)<130) continue;   // landmark tower door arches (towers added below)
+      if(BUILDINGS.some(bb=>bx+bw>bb.x-30&&bx<bb.x+bb.w+30)) continue;
+      if(P.some(q=>q.solid&&!q.oneWay&&q.y<2530&&q.y+q.h>2380&&bx+bw>q.x&&bx<q.x+q.w)) continue;
       const pl=add(Math.round(bx), Math.round(2540-bh), Math.round(bw), Math.round(bh), false, "terra"); pl.soft=1;
     } }
   }
@@ -956,8 +962,8 @@ function buildWorld(){
   add(3360,560,200,20,true); add(3760,520,220,20,true); add(3540,380,200,20,true);   // Pixel Peak (mythic)
   add(5700,640,220,20,true); add(6100,600,220,20,true);                              // Boomtown sky isles
   add(8260,640,200,20,true); add(8660,580,220,20,true); add(8460,440,200,20,true);   // Crystal Spire (legendary)
-  // ===== INTERIOR POCKET ROOMS (pop-up book) =====
-  for(const R of [[60,80,400,280],[560,80,400,280]]){
+  // ===== INTERIOR POCKET ROOMS (pop-up book basements: arcade under Nexus, garage under Boomtown) =====
+  for(const R of [[2200,3560,400,280],[6200,3560,400,280]]){
     const [rx,ry,rw,rh]=R;
     // room:1 marks pocket-room geometry so it can stay hidden during the tram flyover
     add(rx, ry+rh-20, rw, 20, false, "room").room=1;        // floor
@@ -1021,7 +1027,7 @@ const ZIPS = [
   { x1:4200, y1:1868, x2:5240, y2:1320 },   // Caldera rim -> Vertigo crown deck
 ];
 const BOUNCES = (()=>{ const b=[];
-  const surfaceX=[780,1880,3180,4380,5580,6780,7980,9180];
+  const surfaceX=[780,1700,3180,4640,5580,6780,8250,9180];
   DISTRICTS.forEach((d,i)=>b.push({ x:surfaceX[i], y:d.name==="PIXEL PEAK"?2406:2516, w:120, h:24 }));
   b.push({ x:2000, y:3796, w:120, h:24 }, { x:5000, y:3796, w:120, h:24 }, { x:8000, y:3796, w:120, h:24 });
   return b; })();
@@ -1154,7 +1160,7 @@ function drawTraversalCourses(){
     }
   }
 }
-const CRATE_SPOTS = (()=>{ const s=[];
+const CRATE_SPOTS = (()=>{ const s=[];   // legacy fixed grid: now only anchors bot drop targeting; crates themselves re-roll each match
   // every 3rd surface lattice platform gets a crate
   LATTICE.forEach(([x,y],i)=>{ if(i%3===0) s.push([x+90, y-24]); });
   // underground: every other platform
@@ -1167,19 +1173,19 @@ const CRATE_SPOTS = (()=>{ const s=[];
     s.push([x+104, top-24]);
   }
   return s; })();
-// ===== POP-UP BOOK: enterable interiors (pocket rooms in the sky-corner dead zone) =====
+// ===== POP-UP BOOK: enterable interiors (teleport-only basements dug in under their home streets) =====
 const ROOMS=[
-  { id:"arcade", x:60,  y:80, w:400, h:280, label:"NEON ARCADE", asset:"interior_arcade", trim:"#ff3dff" },
-  { id:"garage", x:560, y:80, w:400, h:280, label:"HOVER GARAGE", asset:"interior_garage", trim:"#00d9ff" },
+  { id:"arcade", x:2200, y:3560, w:400, h:280, label:"NEON ARCADE", asset:"interior_arcade", trim:"#ff3dff" },
+  { id:"garage", x:6200, y:3560, w:400, h:280, label:"HOVER GARAGE", asset:"interior_garage", trim:"#00d9ff" },
 ];
 const DOOR_ENDS=[
-  { x:2965, y:2540, tx:150, ty:340,  label:"ENTER NEON ARCADE" },   // Nexus tower arch -> arcade
-  { x:110,  y:340,  tx:2965,ty:2540, label:"EXIT TO NEON NEXUS" },
-  { x:6565, y:2540, tx:610, ty:340,  label:"ENTER HOVER GARAGE" },  // Boomtown tower arch -> garage
-  { x:610,  y:340,  tx:6565,ty:2540, label:"EXIT TO BOOMTOWN" },
+  { x:2965, y:2540, tx:2290,ty:3820, label:"ENTER NEON ARCADE" },   // Nexus tower arch -> arcade basement
+  { x:2250, y:3820, tx:2965,ty:2540, label:"EXIT TO NEON NEXUS" },
+  { x:6565, y:2540, tx:6250,ty:3820, label:"ENTER HOVER GARAGE" },  // Boomtown tower arch -> garage basement
+  { x:6250, y:3820, tx:6565,ty:2540, label:"EXIT TO BOOMTOWN" },
 ];
 const TUBES = [
-  { ax:520,  ay:2540, bx:9080, by:2540 },
+  { ax:560,  ay:2540, bx:8750, by:2540 },
   { ax:2720, ay:2540, bx:2720, by:3820 },
   { ax:6480, ay:2540, bx:5790, by:660  },
 ];
@@ -1215,7 +1221,7 @@ const BUILDINGS=(()=>{
     mk(8520,180, 170, "SHARD GALLERY", "#7df9ff",  1),   // Crystal Cove
     // ===== BUILDING SPREAD (level pass): one enterable per district =====
     mk(820, 170, 150, "SCRAP SHACK",    "#9aa4b5",  1),                                    // Junkyard, clear of shaft 700
-    mk(4620,160, 150, "OBSIDIAN BUNKER","#ffb000", -1),                                    // Pixel Peak east edge, clear of mountain slab
+    mk(4600,160, 150, "OBSIDIAN BUNKER","#ffb000", -1, {gy:2430}),                        // Pixel Peak east terrace: sits ON the first slab (was buried in it)
     mk(4900,180, 210, "TILT TOWER",     "#b84dff",  1, {tilt:0.045}),                      // Vertigo (tilted render, straight collision)
     mk(7240,200, 170, "GREENHOUSE",     "#31e85a", -1, {glassRoof:true, winsX:[0.2,0.45,0.72]}), // Circuit Gardens, clear of dome and shaft
   ];
@@ -1349,6 +1355,9 @@ function buildCoverSpots(){ const R=mulberry32(2024), out=[];
       if(SHAFTS.some(s=>Math.abs(cx-s)<110)) continue;
       if(JUMP_PADS.some(j=>Math.abs(cx-(j.x+40))<70)) continue;
       if(BOOMER_SPOTS.some(b=>Math.abs(cx-b.x)<60)) continue;
+      if(BOUNCES.some(bp=>Math.abs(cx-(bp.x+bp.w/2))<100)) continue;
+      if(TUBE_ENDS.some(t=>t.y>2400&&t.y<2600&&Math.abs(cx-t.x)<70)) continue;
+      if(DOOR_ENDS.some(dd=>dd.y===2540&&Math.abs(cx-dd.x)<70)) continue;
       const [w,h,ty]=TYPES[(R()*TYPES.length)|0];
       const spot={ x:Math.round(cx), y:2540-h, w, h, type:ty };
       if(BUILDINGS.some(b=>aabb(spot,b))) continue;
@@ -1414,35 +1423,35 @@ function botCanContestCrate(cr){
   return !cr.sealed && (space==="world" || space==="building" || space==="poi");
 }
 // ===== COINS: the reason to climb, dive, and detour =====
-const COIN_SEEDS=(()=>{ const R=mulberry32(4242), a=[];
-  const near=(x,y)=>a.push([Math.round(x),Math.round(y)]);
-  // EVERY district gets a coin trail along its signature risky route (4-5 each = even reward)
-  // Junkyard: up the scrap stacks
-  for(let i=0;i<5;i++) near(200+R()*900, 2000-R()*700);
-  // Skyport: the air-lane high pads (reward the vertical climb we just added)
-  for(let i=0;i<5;i++) near(1300+R()*900, 1650+R()*450);
-  // Nexus: rooftop decks + tube run
-  for(let i=0;i<5;i++) near(2500+R()*1000, 1900-R()*900);
-  // Pixel Peak: the summit climb
-  for(let i=0;i<5;i++) near(3900+R()*700, 1500+R()*600);
-  // Vertigo: the sky-bridges (highest risk, best density)
-  for(let i=0;i<5;i++) near(5000+R()*900, 1300+R()*500);
-  // Boomtown: rooftops over the strip
-  for(let i=0;i<5;i++) near(6100+R()*1000, 1950-R()*550);
-  // Gardens: the hedge decks + drift isle
-  for(let i=0;i<5;i++) near(7300+R()*900, 1750+R()*550);
-  // Cove: crystal shard tops + lighthouse
-  for(let i=0;i<5;i++) near(8500+R()*900, 1700+R()*600);
-  // world-spanning reward layers: sky vault line, underground run, arcade jackpot
-  for(const [x,y] of [[420,660],[760,620],[3480,520],[5820,600],[8780,540]]) near(x+R()*40,y-14);
-  for(let i=0;i<12;i++) near(600+R()*8400, 3790);          // underground floor
-  for(const [x,y] of [[150,320],[250,320],[350,320],[700,320]]) near(x,y); // arcade jackpot
-  return a; })();
+// District trail coins RE-ROLL EVERY MATCH (per-match Math.random); the sky vault
+// line and the arcade/garage jackpots stay authored set placements.
+const COIN_TRAIL_BANDS=[
+  [200,900,2000,-700],    // Junkyard: up the scrap stacks
+  [1300,900,1650,450],    // Skyport: the air-lane high pads
+  [2500,1000,1900,-900],  // Nexus: rooftop decks + tube run
+  [3900,700,1500,600],    // Pixel Peak: the summit climb
+  [5000,900,1300,500],    // Vertigo: the sky-bridges (highest risk, best density)
+  [6100,1000,1950,-550],  // Boomtown: rooftops over the strip
+  [7300,900,1750,550],    // Gardens: the hedge decks + drift isle
+  [8500,900,1700,600],    // Cove: crystal shard tops + lighthouse
+];
+const COIN_FIXED_SKY=[[420,660],[760,620],[3480,520],[5820,600],[8780,540]];   // sky vault reward line
+const COIN_JACKPOTS=[[2305,3800],[2420,3800],[2400,3690],[6420,3800]];         // arcade jackpot + loft coin + garage stash
+function coinSeeds(){
+  const a=[], near=(x,y)=>a.push([Math.round(x),Math.round(y)]);
+  for(const [x0,dx,y0,dy] of COIN_TRAIL_BANDS) for(let i=0;i<5;i++) near(x0+Math.random()*dx, y0+Math.random()*dy);
+  for(const [x,y] of COIN_FIXED_SKY) near(x+Math.random()*40, y-14);
+  for(let i=0;i<12;i++){ const ux=600+Math.random()*8400; if(!((ux>2100&&ux<2700)||(ux>6100&&ux<6700))) near(ux, 3790); }  // underground floor (skip the basement rooms)
+  for(const [x,y] of COIN_JACKPOTS) near(x,y);
+  return a;
+}
 function buildCoinBreadcrumbs(){
+  const inWallAt=(x,y)=>{ for(const q of PLATS){ if(!q.oneWay&&!q.gone&&x>q.x+2&&x<q.x+q.w-2&&y>q.y+3&&y<q.y+q.h-3) return true; } return softFilledAt(x,y); };
   const out=[], add=(x,y,kind="platform")=>{
-    if(!Number.isFinite(x)||!Number.isFinite(y)) return;
-    if(out.some(q=>dist(q[0],q[1],x,y)<72)) return;
-    out.push([Math.round(x),Math.round(y),kind]);
+    if(!Number.isFinite(x)||!Number.isFinite(y)) return false;
+    if(inWallAt(x+9,y+9)||lootSpotHazard(x+9,y+9)) return false;
+    if(out.some(q=>dist(q[0],q[1],x,y)<72)) return false;
+    out.push([Math.round(x),Math.round(y),kind]); return true;
   };
   const snap=(x,y)=>{
     let best=null, score=1e9;
@@ -1454,13 +1463,37 @@ function buildCoinBreadcrumbs(){
     }
     return best? [best[0],best[1],true] : [x,y,false];
   };
+  // Field-coin veto: never inside walls or hazards, >=40px clear of interactables.
+  const near2=(x,y,px,py)=>{ const dx=x-px, dy=y-py; return dx*dx+dy*dy<44*44; };
+  const blocked=(x,y)=>{
+    for(const q of PLATS){ if(!q.oneWay&&!q.gone&&x>q.x+2&&x<q.x+q.w-2&&y>q.y+3&&y<q.y+q.h-3) return true; }
+    if(softFilledAt(x,y)||lootSpotHazard(x,y)) return true;
+    for(const V of VENDORS) if(near2(x,y,V.x,(V.y||2540)-24)) return true;
+    for(const P of JUMP_PADS) if(near2(x,y,P.x+P.w/2,P.y)) return true;
+    for(const P of LAUNCH_PADS) if(near2(x,y,P.x+P.w/2,P.y)) return true;
+    for(const P of BOUNCES) if(near2(x,y,P.x+P.w/2,P.y)) return true;
+    for(const b of BOOMER_SPOTS) if(near2(x,y,b.x+10,2526)) return true;
+    for(const D of DOOR_ENDS) if(near2(x,y,D.x,D.y-24)) return true;
+    if(COVER_SPOTS) for(const c of COVER_SPOTS) if(near2(x,y,c.x+c.w/2,c.y+c.h/2)) return true;
+    if(typeof G!=="undefined"&&G.cars) for(const c of G.cars) if(near2(x,y,c.x+c.w/2,c.y+c.h/2)) return true;
+    if(typeof G!=="undefined"&&G.crates) for(const c of G.crates) if(near2(x,y,c.x+c.w/2,c.y+c.h/2)) return true;
+    if(typeof G!=="undefined"&&G.loot) for(const l of G.loot) if(near2(x,y,l.x+l.w/2,l.y+l.h/2)) return true;
+    return false;
+  };
   // Device mouths are intentional wayfinding nodes, not random collectibles.
   for(const L of LADDERS){ add(L.x+L.w/2,L.y-24,"ladder"); add(L.x+L.w/2,L.y+L.h-28,"ladder"); }
   for(const Z of ZIPS){ add(Z.x1,Z.y1-24,"zip"); add(Z.x2,Z.y2-24,"zip"); }
   for(const T of TUBES){ add(T.ax,T.ay-24,"tube"); add(T.bx,T.by-24,"tube"); }
   for(const P of LAUNCH_PADS) add(P.x+P.w/2,P.y-30,"pad");
-  for(const E of ELEVATORS){ add(E.x+E.w/2,E.min-28,"elevator"); add(E.x+E.w/2,E.max-28,"elevator"); }
-  for(const [x,y] of COIN_SEEDS){ const q=snap(x,y); add(q[0],q[1],q[2]?"platform":"landmark"); }
+  for(const E of ELEVATORS){ if(E.axis==="x") continue; add(E.x+E.w/2,E.min-28,"elevator"); add(E.x+E.w/2,E.max-28,"elevator"); }
+  for(const [x,y] of coinSeeds()){
+    for(let t=0;t<7;t++){
+      const q=snap(t? x+rand(-160,160):x, t? y+rand(-120,120):y);
+      if(!q[2]) continue;                     // no floating trail coins: platform snaps only
+      if(blocked(q[0]+9,q[1]+9)) continue;
+      if(add(q[0],q[1],"platform")) break;
+    }
+  }
   return out;
 }
 function makeCoin(x,y,routeKind="platform"){
@@ -1471,12 +1504,12 @@ function makeCoin(x,y,routeKind="platform"){
 // ===== VENDORS: spend tokens on street machines =====
 const VENDORS=[
   { x:1250, item:"medkit",  label:"MEDKIT",       price:4 },
-  { x:3250, item:"shield",  label:"SHIELD CELL",  price:5 },
-  { x:4550, item:"epic",    label:"EPIC WEAPON",  price:9 },
+  { x:3440, item:"shield",  label:"SHIELD CELL",  price:5 },   // under the east city-block arch, clear of the bounce pad
+  { x:3700, y:2430, item:"epic", label:"EPIC WEAPON", price:9 },  // Pixel Peak west terrace strip (was buried inside the mountain)
   { x:7050, item:"powerup", label:"POWER-UP",     price:7 },
   { x:8450, item:"buildmod",label:"WALL KIT",     price:3 },
   { x:5850, item:"frag",    label:"FRAG x2",      price:4 },
-  { x:2250, item:"bigshield",label:"BIG SHIELD",   price:8 },
+  { x:2360, item:"bigshield",label:"BIG SHIELD",   price:8 },  // east of the Skydock Cantina (was inside it, blocking a window)
   { x:1860, y:560, item:"epic", label:"PRIME EPIC", price:8, prime:true },   // SKYDECK ROYALE — best machine in the game
   { x:1990, y:560, item:"forcefield", label:"FORCE FIELD", price:10, prime:true },  // SKYDECK ROYALE — PRIME exclusive
 ];
@@ -1987,14 +2020,14 @@ addEventListener("keyup",e=>{ keys[e.key.toLowerCase()]=false; });
 cv.addEventListener("mousemove",e=>{
   const r=cv.getBoundingClientRect();
   mouse.x=(e.clientX-r.left)*DPR; mouse.y=(e.clientY-r.top)*DPR;
-  if(Math.abs(e.movementX||0)+Math.abs(e.movementY||0)>2){ INPUT.pad=false; mouse.moveT=G.t; } // real mouse motion reclaims aim
+  if(Math.abs(e.movementX||0)+Math.abs(e.movementY||0)>2){ INPUT.pad=false; mouse.moveT=G.t; INPUT.kbmT=performance.now(); } // real mouse motion reclaims aim
 });
 cv.addEventListener("mousedown",e=>{ if(e.button===0) mouse.down=true; if(e.button===2) mouse.rdown=true; });
 addEventListener("mouseup",e=>{ if(e.button===0) mouse.down=false; if(e.button===2) mouse.rdown=false; });
 cv.addEventListener("contextmenu",e=>e.preventDefault());
 // touch → aim + fire (basic)
 cv.addEventListener("touchstart",e=>{ const t=e.touches[0]; const r=cv.getBoundingClientRect();
-  mouse.x=(t.clientX-r.left)*DPR; mouse.y=(t.clientY-r.top)*DPR; mouse.down=true; e.preventDefault(); },{passive:false});
+  mouse.x=(t.clientX-r.left)*DPR; mouse.y=(t.clientY-r.top)*DPR; mouse.down=true; INPUT.touchT=performance.now(); e.preventDefault(); },{passive:false});
 cv.addEventListener("touchmove",e=>{ const t=e.touches[0]; const r=cv.getBoundingClientRect();
   mouse.x=(t.clientX-r.left)*DPR; mouse.y=(t.clientY-r.top)*DPR; e.preventDefault(); },{passive:false});
 cv.addEventListener("touchend",()=>{ mouse.down=false; });
@@ -2253,6 +2286,7 @@ function warmupRespawn(e){
   if(!G.warmup||!e||e.alive) return;
   e.alive=true; e.hp=e.maxhp; removePowerup(e);
   e.burnT=0; e.stunT=0; e.channel=null; e.chargeCast=null; e.grapple=null; e.zipping=null; e.tubing=null; e.car=null;
+  e.ledge=null; e.ledgeCd=0; e.wallJumps=0; e.wallJumpLock=0; e.wallSlide=false; e.ledgePoseT=0;
   e.gliding=false; e.chuteOpen=false; e.riding=false; e.climbing=false; e.bull=null; e.skyUsed=false;
   e.vx=0; e.vy=0; e.iframes=0.6; e.spawnShield=1.2; e.reloading=0; e.burst=null;
   if(!e.weapons.some(id=>{const w2=WEAPONS[id]; return w2&&!w2.melee&&!w2.hook;})) giveWeapon(e,"pistol");
@@ -2368,7 +2402,7 @@ if(typeof location!=="undefined"&&(location.hostname==="127.0.0.1"||location.hos
     warp(x,y=2480){const p=G.player;if(!p)return false;p.x=clamp(Number(x)||0,0,W-p.w);p.y=clamp(Number(y)||0,0,H-p.h);p.vx=p.vy=0;p.riding=false;p.gliding=false;p.chuteOpen=false;p.onGround=false;G.drop=false;G.cam.x=clamp(p.x-VIEW_W/2,0,W-VIEW_W);G.cam.y=clamp(p.y-VIEW_H/2,0,H-VIEW_H);return true;},
     crate(i=0){const c=G.crates.filter(q=>!q.opened)[i];return c?this.warp(c.x-18,c.y-46):false;},
     forceHudState(state="armed",family="keyboard"){
-      if(!G.player){G.chosen="jumper";startMatch();}NET.active=false;NET.started=false;G.state="match";const p=G.player;TOUCH.active=family==="touch";document.body.classList.toggle("touchReady",TOUCH.active);G.qaInputFamily=family==="ps"?"ps":family==="xbox"?"xbox":null;INPUT.pad=family!=="keyboard"&&family!=="touch";
+      if(!G.player){G.chosen="jumper";startMatch();}NET.active=false;NET.started=false;G.state="match";const p=G.player;TOUCH.active=family==="touch";document.body.classList.toggle("touchReady",TOUCH.active);G.qaInputFamily=family==="ps"?"ps":family==="xbox"?"xbox":null;INPUT.pad=family!=="keyboard"&&family!=="touch";INPUT.touchT=family==="touch"?1e12:-1e9;INPUT.kbmT=family==="keyboard"?1e12:-1e9;GP.lastT=INPUT.pad?performance.now():undefined;
       Object.assign(p,{alive:true,riding:state==="transit",gliding:state==="descending",chuteOpen:state==="descending",landed:state!=="transit"&&state!=="descending",armed:state==="armed"});G.drop=p.riding||p.gliding;syncPresentationState();return hudPresentationState();
     },
     hudCapture(state="armed",family="keyboard"){
@@ -2934,7 +2968,7 @@ function tryDoor(e){
     spawnParts(D.x, D.y-30, "#ff3dff", 12);
     e.x=D.tx-e.w/2; e.y=D.ty-e.h-2; e.vx=0; e.vy=0; e.iframes=Math.max(e.iframes,0.3);
     spawnParts(D.tx, D.ty-30, "#ff3dff", 12);
-    // entering an interior (ty in the sky pocket) kicks off the pop-up unfold
+    // entering an interior (ty in a basement pocket) kicks off the pop-up unfold
     if(e.kind==="player"){
       SFX.open();
       const room=ROOMS.find(R=> D.tx>R.x && D.tx<R.x+R.w && D.ty>R.y-40 && D.ty<R.y+R.h+40);
@@ -2993,6 +3027,93 @@ function toggleChute(e){
 }
 
 /* ---------------- Match setup ---------------- */
+/* ===== RANDOMIZED FIELD LOOT (offline): weighted platform sampler + hard spacing =====
+   Authored set loot stays fixed: POI/vault/secret/building/room crates, sky vault
+   line, landmark power-ups, vendors, pads, barrels, cover, zips, doors.  Generic
+   crates, floor consumables, starter guns and coin trails RE-ROLL every match.
+   Hard spacing: loot-loot >=48px, loot-interactable >=40px, crate-crate >=90px. */
+const LOOT_GAP_ITEM=48, LOOT_GAP_STATIC=40, LOOT_GAP_CRATE=90;
+const SKY_CRATE_SPOTS=[[380,676],[720,636],[1060,676],[3440,536],[3840,496],[5780,616],[6180,576],[8340,616],[8740,556]];
+const DISTRICT_LOOT_DENSITY={ "NEON NEXUS":1.25, "BOOMTOWN":1.15, "PIXEL PEAK":1.1, "VERTIGO TOWERS":1.1 };
+function softFilledAt(x,y){
+  for(const z of SOFT_TERRAIN){ if(x<z.x||x>=z.x+z.w||y<z.y||y>=z.y+z.h) continue;
+    const c=Math.min(z.cols-1,Math.max(0,((x-z.x)/(z.w/z.cols))|0)), r=Math.min(z.rows-1,Math.max(0,((y-z.y)/(z.h/z.rows))|0));
+    if(z.cells[r*z.cols+c]) return true; }
+  return false;
+}
+function lootSpotHazard(x,y){
+  for(const Lv of LAVA_POOLS) if(x>Lv[0]-30&&x<Lv[0]+Lv[2]+30&&Math.abs(y-Lv[1])<44) return true;
+  for(const Br of BRAMBLES) if(x>Br[0]-24&&x<Br[0]+Br[2]+24&&Math.abs(y-Br[1])<44) return true;
+  for(const Wt of WATERS) if(x>Wt[0]-24&&x<Wt[0]+Wt[2]+24&&Math.abs(y-Wt[1])<44) return true;
+  if(x>CRUSHER.px-24&&x<CRUSHER.px+CRUSHER.pw+24&&y>CRUSHER.headTop-30&&y<=CRUSHER.floorY+4) return true;  // piston kill box
+  return false;
+}
+function lootSpotWeight(x,y){
+  let wt=1;
+  for(const d of DISTRICTS) if(x>=d.x0&&x<d.x1){ wt*=(DISTRICT_LOOT_DENSITY[d.name]||1); break; }
+  for(const PO of POIS) if(x>PO.x-240&&x<PO.x+PO.w+240&&y>PO.y-240&&y<PO.y+PO.h+240){ wt*=1.6; break; }  // POI-adjacent runs hotter
+  for(const B of BUILDINGS) if(Math.abs(x-(B.x+B.w/2))<380){ wt*=1.3; break; }
+  if(y>2660) wt*=0.85;   // the depths stay a little leaner
+  return wt;
+}
+function buildLootSpots(){
+  const out=[];
+  for(const pl of PLATS){
+    if(pl.room||pl.type||pl.bldg||pl.crumble) continue;   // pockets, movers, terra and crumble decks stay loot-free
+    if(pl.x<0||pl.x+pl.w>W+1||pl.w<70) continue;
+    if(pl.y<820) continue;                                // sky vault line keeps its authored set loot
+    for(let x=pl.x+26;x<=pl.x+pl.w-26;x+=56){
+      if(lootSpotHazard(x,pl.y)) continue;
+      let bad=false;
+      for(const B of BUILDINGS){ if(x>B.x-20&&x<B.x+B.w+20&&pl.y>B.y-10){ bad=true; break; } }
+      if(!bad) for(const rm of ROOMS){ if(x>rm.x-30&&x<rm.x+rm.w+30&&pl.y>rm.y){ bad=true; break; } }
+      if(!bad){ const ay=pl.y-18;   // the standing space above the surface must be open
+        if(softFilledAt(x,ay)||softFilledAt(x,ay-18)) bad=true;
+        else for(const q of PLATS){ if(!q.oneWay&&!q.gone&&x>q.x+2&&x<q.x+q.w-2&&ay>q.y+3&&ay<q.y+q.h-3){ bad=true; break; } } }
+      if(bad) continue;
+      out.push({ x:Math.round(x), y:pl.y, wt:lootSpotWeight(x,pl.y) });
+    }
+  }
+  return out;
+}
+function makeLootPlacer(){
+  const spots=buildLootSpots();   // rebuilt per match: destroyed structures never donate spots
+  const statics=[], S=(x,y)=>statics.push({x,y});
+  for(const V of VENDORS) S(V.x,(V.y||2540)-24);
+  for(const P of JUMP_PADS) S(P.x+P.w/2,P.y);
+  for(const P of LAUNCH_PADS) S(P.x+P.w/2,P.y);
+  for(const P of BOUNCES) S(P.x+P.w/2,P.y);
+  for(const b of BOOMER_SPOTS) S(b.x+10,2526);
+  for(const D of DOOR_ENDS) S(D.x,D.y-24);
+  for(const T of TUBE_ENDS) S(T.x,T.y-16);
+  if(G.cars) for(const c of G.cars) S(c.x+c.w/2,c.y+c.h/2);
+  const cvrs=G.covers&&G.covers.length? G.covers : (COVER_SPOTS||[]);
+  for(const c of cvrs) S(c.x+c.w/2,c.y+c.h/2);
+  const crates=(G.crates||[]).map(c=>({x:c.x+c.w/2,y:c.y+c.h/2}));
+  const loots=(G.loot||[]).map(l=>({x:l.x+l.w/2,y:l.y+l.h/2}));
+  const near2=(p,x,y,g)=>{ const dx=p.x-x, dy=p.y-y; return dx*dx+dy*dy<g*g; };
+  const clear=(x,y,isCrate)=>{
+    for(const s of statics) if(near2(s,x,y,LOOT_GAP_STATIC)) return false;
+    for(const l of loots) if(near2(l,x,y,LOOT_GAP_ITEM)) return false;
+    const cg=isCrate? LOOT_GAP_CRATE:LOOT_GAP_STATIC;
+    for(const c of crates) if(near2(c,x,y,cg)) return false;
+    return true;
+  };
+  const pick=(isCrate,zone)=>{
+    if(!spots.length) return null;
+    for(let tries=0;tries<50;tries++){
+      const sp=spots[randi(0,spots.length)];
+      if(zone==="under"? sp.y<=2600 : zone==="surface"? sp.y>2600 : false) continue;
+      if(Math.random()>sp.wt/2.7) continue;              // weighted draw (rejection sample)
+      if(!clear(sp.x,sp.y-16,isCrate)) continue;
+      (isCrate?crates:loots).push({x:sp.x,y:sp.y-16});
+      return sp;
+    }
+    return null;
+  };
+  return { pick };
+}
+
 function startMatch(){
   if(G.warmup) endWarmup();   // match found mid-warm-up: instant clean teardown, then the full reset below
   const c=CLASSES[G.chosen];
@@ -3086,8 +3207,8 @@ function startMatch(){
     if(!NET.active){for(const wn of B.windows) wn.state=0;if(B.roofWin) B.roofWin.state=0;}
   }
   if(!NET.active){
-  // crates
-  for(const [x,y] of CRATE_SPOTS){
+  // AUTHORED SKY CRATES: the sky vault line keeps fixed set rewards
+  for(const [x,y] of SKY_CRATE_SPOTS){
     G.crates.push({ x:x-16, y:y-3, w:32, h:30, opened:false, glow:rand(0,6.28) });
   }
   // mythic vault crate at Pixel Peak
@@ -3098,45 +3219,55 @@ function startMatch(){
   const carClear=(cx)=>{ const box={x:cx,y:2470,w:96,h:70};
     for(const pl of PLATS){ if(pl.solid && !pl.oneWay && aabb(box,pl)) return false; }
     for(const b of BUILDINGS){ if(aabb(box,b)) return false; }
+    for(const V of VENDORS){ if(!(V.y&&V.y<2500) && cx<V.x+18 && cx+96>V.x-18) return false; }
+    for(const bs of BOOMER_SPOTS){ if(cx<bs.x+28 && cx+96>bs.x) return false; }
+    if(G.covers) for(const cv of G.covers){ if(cx<cv.x+cv.w && cx+96>cv.x) return false; }
+    for(const t of TUBE_ENDS){ if(t.y>2400&&t.y<2600 && cx<t.x+18 && cx+96>t.x-18) return false; }
+    for(const dd of DOOR_ENDS){ if(dd.y===2540 && cx<dd.x+22 && cx+96>dd.x-22) return false; }
+    for(const sx of SHAFTS){ if(cx<sx+60 && cx+96>sx-60) return false; }
     return true; };
-  for(let dx of [1480,3880,6280,8680]){
+  for(let dx of [1480,3880,6280,9370]){   // Cove car parks by the east elevator (old 8680 slot is walled in by gallery/tube/dune)
     let ofs=0;
     while(ofs<600 && !carClear(dx+ofs)) ofs = ofs>0? -ofs : -ofs+40;
     G.cars.push({ x:dx+ofs, y:2506, w:96, h:34, vx:0, vy:0, py:2506, hp:220, maxhp:220,
       driver:null, face:1, onGround:false, blockedX:false, groundRef:null, dropT:0, climbing:false, hoverT:0 });
   }
-  // coins seed the risky routes
-  for(const [cx2,cy2,kind] of buildCoinBreadcrumbs()) G.loot.push(makeCoin(cx2, cy2, kind));
-  // power-up spawns at landmark spots
-  for(const [px,py] of [[380,656],[5750,596],[8340,596],[2000,3780],[5000,3780],[7600,1072]]){
+  // power-up spawns at landmark spots (kept clear of the sky crates + underground pads)
+  for(const [px,py] of [[470,656],[5880,596],[8420,596],[2150,3780],[5150,3780],[7150,1064]]){
     G.loot.push(makePowerup(choice(["mega","inferno","overdrive"]), px, py));
   }
-  // SECRET CACHES: cracked walls hiding legendary loot (3 underground + 1 in the garage)
-  for(const [sid,wx,wy,wh,cx,cy] of [["drain_depths",1750,3620,200,1802,3787],["undercut",5450,3620,200,5502,3787],["crystal_cavern",8850,3620,200,8902,3787],["garage_vault",866,208,132,906,307]]){
+  // SECRET CACHES: cracked walls hiding legendary loot (3 underground + 1 in the garage basement)
+  for(const [sid,wx,wy,wh,cx,cy] of [["drain_depths",1750,3620,200,1802,3787],["undercut",5450,3620,200,5560,3787],["crystal_cavern",8850,3620,200,8902,3787],["garage_vault",6506,3688,132,6546,3787]]){
     G.builds.push({ x:wx, y:wy, w:26, h:wh, hp:240, maxhp:240, decay:1e9, born:0, secret:true, secretId:sid, hinted:false, igniter:null });
     G.crates.push({ x:cx, y:cy, w:32, h:30, opened:false, glow:0, legend:true, space:"secret", sealed:true, secretId:sid });
   }
   // enterable buildings: interior loot pays off exploring + reset facades/windows
   for(const B of BUILDINGS){
     G.crates.push({ x:Math.round(B.x+B.w/2-16), y:B.y+B.h-86-30, w:32, h:30, opened:false, glow:rand(0,6.28), space:"building" });
-    G.loot.push(makeLoot(rollConsumable(), B.x+34, B.y+B.h-40, true));
-    if(Math.random()<0.6) G.loot.push(makeCoin(B.x+B.w-52, B.y+B.h-30));
+    const bl=makeLoot(rollConsumable(), B.x+34, B.y+B.h-40, true); bl.space="building"; G.loot.push(bl);
+    if(Math.random()<0.6 && !lootSpotHazard(B.x+B.w-43, B.y+B.h-21)){ const bc=makeCoin(B.x+B.w-52, B.y+B.h-30); bc.space="building"; G.loot.push(bc); }
   }
-  // interior loot: crates + a power-up per room
-  for(const [ix,iy] of [[210,310],[340,310],[700,310]]){
+  // interior loot: crates + a power-up per room (basement pockets)
+  for(const [ix,iy] of [[2350,3790],[2480,3790],[6340,3790]]){
     G.crates.push({ x:ix, y:iy, w:32, h:30, opened:false, glow:rand(0,6.28), space:"room", sealed:true });
   }
-  for(const [rx,ry] of [[410,300],[660,300]]){ const roomLoot=makePowerup(choice(["mega","inferno","overdrive"]),rx,ry); roomLoot.space="room"; roomLoot.sealed=true; G.loot.push(roomLoot); }
+  for(const [rx,ry] of [[2550,3780],[6300,3780]]){ const roomLoot=makePowerup(choice(["mega","inferno","overdrive"]),rx,ry); roomLoot.space="room"; roomLoot.sealed=true; G.loot.push(roomLoot); }
+  // coins seed the risky routes - trails re-roll each match and stay clear of authored loot
+  for(const [cx2,cy2,kind] of buildCoinBreadcrumbs()) G.loot.push(makeCoin(cx2, cy2, kind));
+  // RANDOMIZED FIELD LOOT: the weighted sampler re-rolls generic crates, floor
+  // consumables and starter guns every match under the hard spacing rules.
+  const placer=makeLootPlacer();
+  const nSurf=Math.ceil(LATTICE.length/3)+6, nUnder=Math.ceil(ULAT.length/2);
+  const dropCrate=(zone)=>{ const sp=placer.pick(true,zone);
+    if(sp) G.crates.push({ x:sp.x-16, y:sp.y-30, w:32, h:30, opened:false, glow:rand(0,6.28) }); };
+  for(let i=0;i<nSurf;i++) dropCrate("surface");
+  for(let i=0;i<nUnder;i++) dropCrate("under");
   // some floor consumables
-  for(let i=0;i<6;i++){
-    const s=choice(CRATE_SPOTS);
-    G.loot.push(makeLoot(rollConsumable(), s[0]+rand(-30,30), s[1]-16, true));
-  }
+  for(let i=0;i<6;i++){ const sp=placer.pick(false);
+    if(sp) G.loot.push(makeLoot(rollConsumable(), sp.x-14, sp.y-44, true)); }
   // loot-up start: nobody spawns with a gun, so seed plenty of early ground guns
-  for(let i=0;i<16;i++){
-    const s=choice(CRATE_SPOTS);
-    G.loot.push(makeLoot(choice(["pistol","pistol","smg","smg","shuriken","bat"]), s[0]+rand(-70,70), s[1]-16, false));
-  }
+  for(let i=0;i<16;i++){ const sp=placer.pick(false);
+    if(sp) G.loot.push(makeLoot(choice(["pistol","pistol","smg","smg","shuriken","bat"]), sp.x-14, sp.y-44, false)); }
   }
 
   G.cam.x=0; G.cam.y=0; G.regionName=null; G.regionBanner=null;
@@ -3264,15 +3395,76 @@ function botTraversalRoute(b,tx,ty){
   if(next===start) return null;
   return {from:g.nodes[start],node:g.nodes[next],goal:g.nodes[goal],kind:via[next],hops:(()=>{let n=goal,c=0;while(n!==start){n=prev[n];c++;}return c;})()};
 }
+/* ---------------- LEDGEKIT: ledge grab + wall jump (OFFLINE ONLY) ----------------
+   The authoritative server owns online movement, so these mechanics are gated on
+   !NET.active for the local player until the server implements them (server backlog). */
+const LEDGE_REACH=10, LEDGE_HAND=8, LEDGE_CHEST=22, LEDGE_COOLDOWN=0.25;
+const WALLJUMP_VY=-780, WALLJUMP_VX=420, WALLJUMP_MAX=3, WALLJUMP_LOCK=0.2, WALLSLIDE_CAP=240;
+function ledgeGrabbable(p){ return p.solid && !p.oneWay && !p.gone && !p.room; }   // solid shells only: one-way decks + pocket-room geometry excluded
+function tryLedgeGrab(e){
+  if(e.kind!=="player" && e.kind!=="bot") return;
+  if(NET.active && e===G.player) return;              // offline sim only (server backlog)
+  if(e.ledge || e.onGround || e.vy<=0 || (e.ledgeCd||0)>0) return;
+  if(e.climbing || e.gliding || e.zipping || e.riding || e.tubing || e.car || e.grapple) return;
+  if(e.stunT>0 || e.chargeCast || e.bull) return;
+  const hand=e.y+LEDGE_HAND, chest=e.y+LEDGE_CHEST;
+  for(const p of PLATS){
+    if(!ledgeGrabbable(p) || p.y<hand || p.y>chest) continue;
+    let side=0;
+    if(e.x+e.w>=p.x-LEDGE_REACH && e.x+e.w<=p.x+6) side=1;
+    else if(e.x<=p.x+p.w+LEDGE_REACH && e.x>=p.x+p.w-6) side=-1;
+    if(!side) continue;
+    const top={ x: side>0? p.x+1 : p.x+p.w-e.w-1, y:p.y-e.h-1, w:e.w, h:e.h };   // need room to mantle out
+    let clear=true;
+    for(const q of PLATS){ if(q!==p && q.solid && !q.oneWay && !q.gone && aabb(top,q)){ clear=false; break; } }
+    if(!clear) continue;
+    e.ledge={ p, side, px:p.x, py:p.y };
+    e.x = side>0? p.x-e.w : p.x+p.w;
+    e.y = p.y-LEDGE_HAND;
+    e.vx=0; e.vy=0; e.onGround=false; e.face=side; e.hangT=0; e.wallJumps=0; e.wallSlide=false; e.dropT=0;
+    spawnParts(side>0? p.x : p.x+p.w, p.y, "#9fb4d8", 4);
+    return;
+  }
+}
+function ledgeRelease(e){
+  if(!e.ledge) return;
+  const side=e.ledge.side;
+  e.ledge=null; e.ledgeCd=LEDGE_COOLDOWN;             // regrab cooldown so drops actually drop
+  e.vx=-side*60; e.vy=Math.max(e.vy||0,40);
+}
+function ledgeClimb(e){
+  const l=e.ledge; if(!l) return;
+  const p=l.p;
+  e.ledge=null; e.ledgeCd=LEDGE_COOLDOWN;
+  e.x = l.side>0? p.x+1 : p.x+p.w-e.w-1;              // atop the lip
+  e.y = p.y-e.h-1;
+  e.vx=l.side*40; e.vy=-240; e.onGround=false;        // small mantle hop
+  e.ledgePoseT=0.3;                                   // brief climb pose
+  spawnParts(e.x+e.w/2, p.y, "#9fb4d8", 6);
+}
+function ledgeHangStep(e, dt){
+  const l=e.ledge, p=l.p;
+  if(e.grapple){ ledgeRelease(e); return; }           // firing the grapple lets go of the lip
+  const exOld = l.side>0? l.px-e.w : l.px+p.w, eyOld=l.py-LEDGE_HAND;
+  if(p.gone || Math.abs(p.x-l.px)>6 || Math.abs(p.y-l.py)>6 ||
+     Math.abs(e.x-exOld)>2 || Math.abs(e.y-eyOld)>2){ ledgeRelease(e); return; }   // crumbled, fast mover, or something moved us
+  e.x = l.side>0? p.x-e.w : p.x+p.w; e.y=p.y-LEDGE_HAND;   // ride slow movers
+  l.px=p.x; l.py=p.y;
+  e.vx=0; e.vy=0; e.onGround=false;
+  e.hangT=(e.hangT||0)+dt;
+  if(e.kind==="bot" && e.hangT>=0.3) ledgeClimb(e);   // bots always mantle - keeps them out of pits
+}
 function collide(e, dt){
+  // LEDGEKIT: hanging entities are pinned to their ledge; skip normal movement
+  if(e.ledge){ ledgeHangStep(e, dt); if(e.ledge) return; }
   // horizontal
-  e.blockedX=false;
+  e.blockedX=false; e.wallDir=0;
   e.x += e.vx*dt;
   for(const p of PLATS){
     if(p.oneWay) continue;
     if(aabb(e,p)){
-      if(e.vx>0){ e.x=p.x-e.w; e.blockedX=true; }
-      else if(e.vx<0){ e.x=p.x+p.w; e.blockedX=true; }
+      if(e.vx>0){ e.x=p.x-e.w; e.blockedX=true; if(!p.room && !p.gone) e.wallDir=1; }
+      else if(e.vx<0){ e.x=p.x+p.w; e.blockedX=true; if(!p.room && !p.gone) e.wallDir=-1; }
       e.vx*=0.0;
     }
   }
@@ -3288,7 +3480,10 @@ function collide(e, dt){
   // vertical
   e.py=e.y;
   if(e.climbing){ e.vy=clamp(e.vy,-260,260); }
-  else { e.vy=clamp(e.vy+GRAV*dt, -2000, MAXFALL); }
+  else { e.vy=clamp(e.vy+GRAV*dt, -2000, MAXFALL);
+    // WALLKIT: pressing into a solid wall while falling caps fall speed (wall slide)
+    if(e.wallSlide && e.wallDir && e.vy>WALLSLIDE_CAP){ e.vy=WALLSLIDE_CAP;
+      if(Math.random()<0.3) spawnParts(e.wallDir>0? e.x+e.w : e.x, e.y+e.h*0.55, "#9fb4d8", 1); } }
   e.y += e.vy*dt;
   e.onGround=false; e.groundRef=null;
   const feetPrev=e.py+e.h-(e.carryDy||0); e.carryDy=0;
@@ -3310,7 +3505,7 @@ function collide(e, dt){
   // bounce / launch pads - big air deploys a chute so players can choose where to come down
   for(const BP of BOUNCES){
     if(e.vy>=0 && e.x+e.w>BP.x && e.x<BP.x+BP.w && Math.abs((e.y+e.h)-BP.y)<14){
-      e.vy=-1550; e.softT=0.4; if(e.kind==="player"){ if(!playSfx("jump_pad",{vol:0.5})) SFX.bounce(); }
+      e.vy=-1550; e.softT=0.4; e.wallJumps=0; if(e.kind==="player"){ if(!playSfx("jump_pad",{vol:0.5})) SFX.bounce(); }
       if(e.kind==="player"){ ONBOARD.event("traverse"); e.gliding=true; e.chuteOpen=true; e.onGround=false; playSfx("glider_open",{vol:0.4}); }
       spawnParts(e.x+e.w/2, BP.y, "#00d9ff", 10);
     }
@@ -3322,8 +3517,11 @@ function collide(e, dt){
       if(e.kind==="player"){ ONBOARD.event("traverse"); e.gliding=true; e.chuteOpen=true; e.onGround=false; playSfx("glider_open",{vol:0.4}); }
       DP.glow=1;
       spawnParts(e.x+e.w/2, DP.y, "#b84dff", 10);
+      e.wallJumps=0;
     }
   }
+  if(e.onGround) e.wallJumps=0;   // WALLKIT: ground touch refills wall jumps
+  tryLedgeGrab(e);                // LEDGEKIT: falling past a solid lip snaps into a hang
 }
 
 /* ---------------- Combat ---------------- */
@@ -3380,7 +3578,7 @@ function fire(e, aimX, aimY){
 function fireShot(e, wpn, baseAng){
   const cx=e.x+e.w/2, cy=e.y+e.h/2;
   const sk=skinOf(wpn.id);
-  const acc=(e.ads? 0.25:1);
+  const acc=(e.ads? 0.25:1)*(e.zipping? 1.25:1);   // zip riders trade +25% bloom for mobile fire
   const spd=wpn.speed*(e.ads? 1.1:1);
   if(wpn.beam){
     // PHOTON LANCE: instant piercing hitscan
@@ -3856,6 +4054,7 @@ function safeTeleport(e,dx,dy){
 }
 function useAbility(e, dir){
   if(e.abilityCd>0 || e.chargeCast || e.bull) return;
+  if(e.ledge) return;   // LEDGEKIT: hands are busy while hanging (climb or drop first)
   if(e.kind==="player") ONBOARD.tip("ability");
   const cl=CLASSES[e.cls];
   if(dir && dir===cl.specialDir && useSpecial(e, cl)){ e.abilityCd*=(cl.cdMult||1); abilityJuice(e, cl.c); if(e.kind==="player") SFX.ability(); return; }
@@ -4030,6 +4229,7 @@ function tryZip(e){
     const toFar = t<0.5 ? {x:Z.x2,y:Z.y2}:{x:Z.x1,y:Z.y1};
     e.x=px-e.w/2; e.y=py-e.h/2;
     e.zipping={ tx:toFar.x, ty:toFar.y, t:0, mountX:px, mountY:py };
+    e.ledge=null; e.wallJumps=0;   // LEDGEKIT: zip mount clears hang + refills wall jumps
     if(e.kind==="player") ONBOARD.event("traverse");
     if(e.kind==="player"){ if(!playSfx("zipline",{vol:0.5})) SFX.ability(); }
   }
@@ -4045,6 +4245,43 @@ function zipStep(e, dt){
   e.x+=dx/d*step; e.y+=dy/d*step;
   e.vx=dx/d*speed; e.vy=0;   // keeps facing/pose stable
   if(Math.random()<0.3) spawnParts(cx, cy-6, "#00d9ff", 1);
+}
+// ZIP COMBAT (bots): riders may return fire at a line-of-sight target with normal persona aim
+function zipBotFire(b){
+  const ai=b.ai, t=ai&&ai.target;
+  if(!t || !t.alive || b.cd>0 || b.reloading>0 || b.ammo<=0) return;
+  const fw=curWeapon(b);
+  if(!fw || fw.melee || fw.hook) return;
+  const cx=b.x+b.w/2, cy=b.y+b.h/2, tx=t.x+t.w/2, ty=t.y+t.h/2;
+  const per=(ai.per||BOT_PERSONAS.soldier), nd=dist(cx,cy,tx,ty);
+  if(nd>per.engage) return;
+  if(wallCross(cx,cy,tx,ty,true)) return;   // same cheap LoS test botThink uses
+  b.aimAng=Math.atan2(ty-cy, tx-cx);
+  const err=Math.max(per.aimMin, per.aim*(0.55+nd/700));
+  fire(b, tx+rand(-err,err), ty+rand(-err,err));
+}
+// Weapon-state timers, shared by normal physics entities AND riders (zip rails, cars)
+// whose update branches skip the main physics body. Without this, firing from a rail
+// or a car jams after one magazine: cd/reload/burst would never tick down.
+function stepCombatTimers(e,dt){
+  e.cd=Math.max(0,e.cd-dt);
+  e.heat=Math.max(0,(e.heat||0)-dt*0.85);
+  e.useCd=Math.max(0,e.useCd-dt);
+  e.muzzle=Math.max(0,e.muzzle-dt);
+  if(e.burst){
+    e.burst.cd-=dt;
+    if(e.burst.cd<=0){
+      const w=WEAPONS[e.burst.wid];
+      if(w && curWeapon(e)===w && e.ammo>0){
+        fireShot(e,w,e.burst.ang); e.ammo--; saveWeaponAmmo(e); e.muzzle=0.05; shotSfx(e,w);
+        if(e.kind==="player") MATCH_METRICS.weapon(w.id).shots++;
+        e.burst.left--; e.burst.cd=(w&&w.burstGap)||0.07;
+        if(e.burst.left<=0){ e.burst=null; if(e.ammo<=0 && w){ e.reloading=w.reload; if(e.kind==="player") playSfx("reload",{vol:0.6}); } }
+      } else e.burst=null;
+    }
+  }
+  if(e.reloading>0){ e.reloading-=dt; if(e.reloading<=0){ const w=curWeapon(e); if(w){ e.ammo=w.mag; saveWeaponAmmo(e); } } }
+  if(e._dryT>0) e._dryT-=dt;
 }
 
 const EMOTES=["GG!","♥","!!","☺","♛"];
@@ -4291,11 +4528,23 @@ function stepAirdrops(dt){
 
 /* ---------------- Gamepad ---------------- */
 const GP={ prev:[], aim:{x:1,y:0} };
-const INPUT={ pad:false };  // true once a controller is actively used; flips back on kb/mouse
+const INPUT={ pad:false, touchT:(TOUCH.active?0:-1e9), kbmT:-1e9 };  // pad: controller actively used; touchT/kbmT: last-seen timestamps per family
 try{
-  addEventListener("keydown", ()=>{ INPUT.pad=false; });
-  addEventListener("mousedown", ()=>{ INPUT.pad=false; });
+  addEventListener("keydown", ()=>{ INPUT.pad=false; INPUT.kbmT=performance.now(); });
+  addEventListener("mousedown", ()=>{ INPUT.pad=false; INPUT.kbmT=performance.now(); });
+  addEventListener("pointerdown", e=>{ if(e.pointerType==="touch"){ INPUT.touchT=performance.now(); INPUT.pad=false; } else if(e.pointerType==="mouse"){ INPUT.kbmT=performance.now(); } });
 }catch(e){}
+// INPUTCARD device heuristic: the most recently used input family owns the HUD.
+// Touch controls render only while touch is the live input; keyboard/mouse or pad
+// activity hides them and swaps in the compact input card instead.
+function activeInputFamily(){
+  try{
+    const padT=(GP.lastT!==undefined)?GP.lastT:-1e9;
+    if(TOUCH.active && INPUT.touchT>=INPUT.kbmT && INPUT.touchT>=padT) return "touch";
+    return padActive()? "pad":"kbm";
+  }catch(e){ return TOUCH.active? "touch":"kbm"; }
+}
+function touchUIActive(){ return activeInputFamily()==="touch"; }
 function padActive(){
   try{ return INPUT.pad || (GP.lastT!==undefined && performance.now()-GP.lastT<5000); }
   catch(e){ return INPUT.pad; }
@@ -4314,7 +4563,7 @@ function controllerFamily(){
   return "generic";
 }
 function contextualDropGlyph(){if(!padActive())return "E / SPACE";return controllerFamily()==="ps"?"× / ○":"A / B";}
-function interactGlyph(){ if(TOUCH.active) return "TAP"; if(!padActive()) return "E"; return controllerFamily()==="ps"?"○":"B"; }
+function interactGlyph(){ if(touchUIActive()) return "TAP"; if(!padActive()) return "E"; return controllerFamily()==="ps"?"○":"B"; }
 // item usage strings, controller edition (toast hints + pause cards swap to these)
 const PAD_USAGE={ heal:"Press LB", medkit:"Press LB (used before juice)", shield:"D-PAD ▲",
   bigshield:"D-PAD ▲ (when no small potions left)", buildmod:"Press L3",
@@ -4614,10 +4863,11 @@ function placeModWall(e){
 function handleKey(k){
   // spectate mode keys (player dead, watching the match)
   if(G.state==="match" && G.player && !G.player.alive && G.spectating){
+    if(k==="p"||k==="escape"){ togglePause(); return; }   // pause menu (quit/restart) works while spectating
+    if(G.paused) return;
     if(k==="a"||k==="arrowleft"){ cycleSpectate(-1); return; }
     if(k==="d"||k==="arrowright"){ cycleSpectate(1); return; }
     if(k==="tab"){ G.specStats=!G.specStats; return; }
-    if(k==="escape"){ leaveSpectate(); return; }
     return;
   }
   if(k==="p"||k==="escape"){ togglePause(); return; }
@@ -4667,6 +4917,18 @@ function controlPlayer(p, dt){
   if(orientationShouldGate()){p.vx=0;return;}
   if(p.stunT>0){ p.vx=0; return; }
   if(p.chargeCast || p.bull) return;   // committed to a special (Smash endlag)
+  if(p.ledge){   // LEDGEKIT: hanging - jump/up climbs, down or pushing away drops
+    const th=traversalInput();
+    p.vx=0; p.wallSlide=false;
+    const away = p.ledge.side>0? th.ax<-0.35 : th.ax>0.35;
+    if((th.jump && !p.jumpHeld) || th.climb<-0.5) ledgeClimb(p);
+    else if(th.down || away) ledgeRelease(p);
+    p.jumpHeld=th.jump;
+    if(!INPUT.pad && (mouse.down || G.t-mouse.moveT<1.5)) p.aimAng=Math.atan2(mouse.wy-(p.y+p.h/2), mouse.wx-(p.x+p.w/2));
+    if(mouse.down || keys["j"]) fire(p, mouse.wx, mouse.wy);   // one-armed hang fire stays live
+    pollGamepad(p, dt);
+    return;
+  }
   const c=CLASSES[p.cls];
   if(p.zipping) return; // zip handled separately
   const ti=traversalInput(), ax=ti.ax;
@@ -4686,6 +4948,18 @@ function controlPlayer(p, dt){
     } else {
       p.vy=-c.jump; p.onGround=false; p.coyoteT=0; p.jumpBufT=0; telemetryJumpAttempt(p); ONBOARD.event("jump");
     }
+  }
+  // WALLKIT: wall slide + wall jump. OFFLINE ONLY - the server owns online movement
+  // (client prediction would desync); server backlog item before enabling online.
+  p.wallJumpLock=Math.max(0,(p.wallJumpLock||0)-dt);
+  const intoWall = !NET.active && !p.onGround && p.wallDir!==0 && ax*p.wallDir>0.15;
+  p.wallSlide = intoWall && p.vy>0;
+  if(intoWall && p.jumpBufT>0 && p.wallJumpLock<=0 && (p.wallJumps||0)<WALLJUMP_MAX){
+    p.vy=WALLJUMP_VY; p.vx=-p.wallDir*WALLJUMP_VX; p.face=-p.wallDir;
+    p.wallJumps=(p.wallJumps||0)+1; p.wallJumpLock=WALLJUMP_LOCK; p.jumpBufT=0; p.coyoteT=0;
+    spawnParts(p.wallDir>0? p.x+p.w : p.x, p.y+p.h*0.5, "#9fb4d8", 8);
+    SFX.bounce();
+    telemetryJumpAttempt(p); ONBOARD.event("jump");
   }
   // AIM LOCK: with the mouse untouched, the gun locks horizontally forward in the
   // facing direction; holding W/S tilts the shot ±25°. Mouse motion = full free aim.
@@ -5256,21 +5530,29 @@ function update(dt){
   const wasDrop=G.drop;
   {const self=NET.active?NET.snapshot?.players?.find(e=>e.id===NET.id):null;G.drop=NET.active?!!(self&&(self.riding||self.gliding)):(G.tram&&G.tram.active)||G.ents.some(e=>e.alive&&(e.riding||e.gliding));}
   if(wasDrop && !G.drop){ G.nextStorm=STORM_GRACE*difficulty().grace; const hs=hudPresentationState();if(hs!=="transit"&&hs!=="descending")toast("⚡ STORM FORMING — GEAR UP"); }
-  // pocket rooms (NEON ARCADE / HOVER GARAGE, sky corner) fade in only after the drop —
-  // they sit directly on the tram flyover path and looked like mystery boxes at spawn
+  // pocket rooms (NEON ARCADE / HOVER GARAGE basements) fade in only after the drop.
+  // Kept even though the rooms moved underground off the tram path: it stays the
+  // single !G.drop render gate for room geometry and costs one lerp per frame.
   G.roomA = G.drop? 0 : Math.min(1, (G.roomA===undefined?1:G.roomA)+dt*1.6);
 
   // player
   const p=G.player;
   if(p.alive&&!NET.active){
     if(p.zipping){
-      // jump dismounts the zipline, keeping momentum from the ride
-      if((keys["w"]||keys["arrowup"]||keys[" "]) && p.zipping.t>0.25){
+      // jump dismounts the zipline, keeping momentum from the ride (keyboard W/Up/Space or pad A)
+      if(traversalInput().jump && p.zipping.t>0.25){
         const z=p.zipping;
         if(z.t<0.85) TRAVERSAL_TELEMETRY.record("abandoned_zip_mount",p.x+p.w/2,p.y+p.h/2,"early_dismount");
         p.zipping=null; p.vy=-380;
       }
       else { zipStep(p, dt); if(!p.zipping) p.vy=-200; }
+      // ZIP COMBAT: free aim + fire/grenades stay live on the rail (A/D never dismount)
+      if(p.zipping){
+        if(!INPUT.pad && (mouse.down || G.t-mouse.moveT<1.5))
+          p.aimAng=Math.atan2(mouse.wy-(p.y+p.h/2), mouse.wx-(p.x+p.w/2));
+        if(mouse.down||keys["j"]) fire(p, mouse.wx, mouse.wy);
+        pollGamepad(p, dt);   // pads stay live on the rail: RT fires, right stick aims, X throws
+      }
     } else if(p.gliding){
       // glide steering: A/D or left stick drift, S fast-falls
       let ax=0;
@@ -5299,7 +5581,7 @@ function update(dt){
   for(const e of G.ents){
     if(!e.alive) continue;
     if(e.zipping){
-      if(e.kind==="bot") zipStep(e, dt);
+      if(e.kind==="bot"){ zipStep(e, dt); if(e.zipping) zipBotFire(e); }
       continue;
     }
     if(e.kind==="bot" && !G.drop && !e.gliding && !e.riding && !e.tubing) botThink(e,dt);
@@ -5321,9 +5603,14 @@ function update(dt){
   for(const e of G.ents){
     if(!e.alive) continue;
     if(NET.active&&e===G.player) continue;
-    if(e.zipping) continue;
+    if(e.zipping){
+      stepCombatTimers(e,dt);                     // ZIP COMBAT: weapons keep cycling on the rail
+      e.iframes=Math.max(0,e.iframes-dt);
+      e.hurtFlash=Math.max(0,e.hurtFlash-dt);
+      continue;
+    }
     if(e.riding){ e.x=G.tram.x+ (e.seat%140); e.y=G.tram.y+6; e.vx=0; e.vy=0; continue; }
-    if(e.car) continue; // car physics moves the driver
+    if(e.car){ stepCombatTimers(e,dt); e.hurtFlash=Math.max(0,e.hurtFlash-dt); continue; } // car physics moves the driver; drive-by weapons keep cycling
     if(e.tubing){
       e.tubing.t-=dt; e.iframes=Math.max(e.iframes,0.15);
       if(!e.tubing.done && e.tubing.t<=0.25){
@@ -5384,9 +5671,9 @@ function update(dt){
       hazardStep(e, dt);
     }
     if(e.kind==="player") telemetryStepPlayer(e,dt);
-    e.cd=Math.max(0,e.cd-dt);
-    e.heat=Math.max(0,(e.heat||0)-dt*0.85);
+    stepCombatTimers(e,dt);   // cd/heat/useCd/muzzle/burst/reload (shared with zip/car riders)
     e.abilityCd=Math.max(0,e.abilityCd-dt);
+    e.ledgeCd=Math.max(0,(e.ledgeCd||0)-dt); e.ledgePoseT=Math.max(0,(e.ledgePoseT||0)-dt);   // LEDGEKIT timers
     // ---- Smash-style directional special states ----
     if(e.skyUsed && e.onGround) e.skyUsed=false;                    // recovery recharges on landing
     if(e.skyWave && e.onGround){ e.skyWave=false;                   // Sky Recovery landing shockwave
@@ -5412,7 +5699,6 @@ function update(dt){
         if(e===G.player && G.shakeOn) G.shake=Math.min(10,G.shake+5);
         spawnParts(e.x+(e.face>0?e.w:0), e.y+e.h/2, "#9aa4b5", 8); }
       else if(e.bull && e.bull.t<=0) e.bull=null; }
-    e.useCd=Math.max(0,e.useCd-dt);
     if(e.channel){
       if(Math.abs(e.vx)>25 || !e.onGround){ e.channel=null; if(e.kind==="player") toast("◆ CHANNEL CANCELLED — HOLD STILL"); }
       else {
@@ -5451,19 +5737,6 @@ function update(dt){
           spawnParts(t.x+t.w/2, t.y, "#b84dff", 12); if(e.kind==="player") SFX.hit(); break; } }
     }
     e.hurtFlash=Math.max(0,e.hurtFlash-dt);
-    e.muzzle=Math.max(0,e.muzzle-dt);
-    if(e.burst){
-      e.burst.cd-=dt;
-      if(e.burst.cd<=0){
-        const w=WEAPONS[e.burst.wid];
-        if(w && curWeapon(e)===w && e.ammo>0){ fireShot(e,w,e.burst.ang); e.ammo--; saveWeaponAmmo(e); e.muzzle=0.05; shotSfx(e,w); if(e.kind==="player") MATCH_METRICS.weapon(w.id).shots++; }
-        else { e.burst=null; continue; }
-        e.burst.left--; e.burst.cd=(w&&w.burstGap)||0.07;
-        if(e.burst.left<=0){ e.burst=null; if(e.ammo<=0 && w){ e.reloading=w.reload; if(e.kind==="player") playSfx("reload",{vol:0.6}); } }
-      }
-    }
-    if(e.reloading>0){ e.reloading-=dt; if(e.reloading<=0){ const w=curWeapon(e); if(w){ e.ammo=w.mag; saveWeaponAmmo(e); } } }
-    if(e._dryT>0) e._dryT-=dt;
   }
 
   if(!NET.active){
@@ -6111,9 +6384,9 @@ function drawWorld(){
     if(roomA<1){ ctx.save(); ctx.globalAlpha*=roomA; drawPopupRoom(R); ctx.restore(); }
     else drawPopupRoom(R);
   }
-  // doorways (sky-pocket EXIT doors follow the same drop-phase gate)
+  // doorways (basement-pocket EXIT doors follow the same drop-phase gate)
   for(const D of DOOR_ENDS){
-    if(D.y<500 && roomA<1) continue;
+    if(roomA<1 && ROOMS.some(R=> D.x>R.x-40 && D.x<R.x+R.w+40 && D.y>R.y-40 && D.y<R.y+R.h+40)) continue;
     if(!vis(D.x-30, D.y-80, 60, 90)) continue;
     ctx.save();
     ctx.shadowColor="#ff3dff"; ctx.shadowBlur=12;
@@ -7159,7 +7432,7 @@ function drawEntity(e){
   let pose="idle";
   if(e.hurtFlash>0.04 && !stormSil) pose="hurt";   // storm ticks refresh hurtFlash forever; keep movement poses readable
   else if(e.muzzle>0.02) pose="attack";
-  else if(e.climbing) pose="climb";
+  else if(e.climbing || e.ledge || (e.ledgePoseT||0)>0) pose="climb";   // LEDGEKIT: hang + mantle reuse the climb pose
   else if(!e.onGround) pose = e.vy>260? "fall":"jump";
   else if(Math.abs(e.vx)>40) pose = Math.floor(G.t*9)%2? "run1":"run2";
   const POSE_I={idle:0,run1:1,run2:2,jump:3,fall:4,attack:5,hurt:6,climb:7};
@@ -7338,7 +7611,7 @@ function drawObjectiveDirector(p){
   ctx.restore();
 }
 function drawDropStateHUD(p,alive,state){
-  const touch=TOUCH.active,mapW=touch?180:236,mapH=touch?72:96,mapX=VIEW_W-mapW-12;
+  const touch=touchUIActive(),mapW=touch?180:236,mapH=touch?72:96,mapX=VIEW_W-mapW-12;
   panel(VIEW_W/2-118,12,236,46);ctx.textAlign="center";ctx.fillStyle="#00d9ff";ctx.shadowColor="#00d9ff";ctx.shadowBlur=6;ctx.font="bold 14px 'Rajdhani'";
   ctx.fillText(state==="transit"?"SKY TRAM EN ROUTE":"DESCENDING",VIEW_W/2,31);ctx.shadowBlur=0;ctx.fillStyle="#c8d6f5";ctx.font="11px 'Rajdhani'";ctx.fillText("ALIVE  "+alive+" / "+G.aliveStart,VIEW_W/2,49);
   if(state==="transit"){
@@ -7353,7 +7626,56 @@ function drawDropStateHUD(p,alive,state){
   }
 }
 function drawCompactVitals(p){const x=16,y=VIEW_H-70,w=230;panel(x-6,y-8,w+12,62);ctx.textAlign="left";ctx.fillStyle="rgba(0,0,0,.5)";roundRect(x,y,w,14,4);ctx.fill();ctx.fillStyle="#00d9ff";roundRect(x,y,w*clamp(p.shield/p.maxshield,0,1),14,4);ctx.fill();ctx.fillStyle="#04121a";ctx.font="bold 10px 'Rajdhani'";ctx.fillText("SHIELD "+Math.round(p.shield),x+6,y+11);const hy=y+20;ctx.fillStyle="rgba(0,0,0,.5)";roundRect(x,hy,w,18,4);ctx.fill();ctx.fillStyle=p.hp>p.maxhp*.5?"#31e85a":p.hp>p.maxhp*.25?"#ffb000":"#ff3b5c";roundRect(x,hy,w*clamp(p.hp/p.maxhp,0,1),18,4);ctx.fill();ctx.fillStyle="#04121a";ctx.font="bold 12px 'Rajdhani'";ctx.fillText("HP "+Math.max(0,Math.round(p.hp))+" / "+p.maxhp,x+8,hy+13);}
-function drawLandedUnarmedHUD(p,alive){panel(VIEW_W/2-118,12,236,46);ctx.textAlign="center";ctx.fillStyle="#31e85a";ctx.font="bold 13px 'Rajdhani'";ctx.fillText("FIRST PRIORITY",VIEW_W/2,31);ctx.fillStyle="#eaf2ff";ctx.font="bold 11px 'Rajdhani'";ctx.fillText("OPEN A CRATE · FIND A FIREARM · ALIVE "+alive,VIEW_W/2,49);drawMinimap(VIEW_W-(TOUCH.active?192:248),12,TOUCH.active?180:236,TOUCH.active?72:96,"combat");drawCompactVitals(p);const shown=drawWorldInteractionIcons(p);drawInteractPrompt(p,shown);}
+function drawLandedUnarmedHUD(p,alive){panel(VIEW_W/2-118,12,236,46);ctx.textAlign="center";ctx.fillStyle="#31e85a";ctx.font="bold 13px 'Rajdhani'";ctx.fillText("FIRST PRIORITY",VIEW_W/2,31);ctx.fillStyle="#eaf2ff";ctx.font="bold 11px 'Rajdhani'";ctx.fillText("OPEN A CRATE · FIND A FIREARM · ALIVE "+alive,VIEW_W/2,49);drawMinimap(VIEW_W-(touchUIActive()?192:248),12,touchUIActive()?180:236,touchUIActive()?72:96,"combat");drawCompactVitals(p);const shown=drawWorldInteractionIcons(p);drawInteractPrompt(p,shown);}
+/* INPUTCARD: compact keyboard/controller reference card. Lives in the space the touch
+   sticks would occupy (left side, above the vitals panel). Shows the core binds with the
+   correct device glyphs, lights a bind up while it is actually held, and lists the class
+   ability + special with live cooldown state. Fades to 40% after 10s of play; returns to
+   full opacity at spawn, on hover, or while any shown input is held. */
+const INPUTCARD={a:1};
+function drawInputCard(p){
+  if(touchUIActive()||!p.alive) return;
+  const pad=padActive(), gp=pad?getPad():null, bt=i=>!!(gp&&gp.buttons[i]&&gp.buttons[i].pressed);
+  const c=CLASSES[p.cls];
+  const binds=[
+    ["FIRE",    pad?padGlyph("J"):"LMB", !!(mouse.down||keys["j"]||bt(7))],
+    ["JUMP",    pad?padGlyph("W"):"SPC", !!(keys[" "]||keys["w"]||bt(0))],
+    ["ABILITY", padGlyph("Q"),           !!(keys["q"]||bt(3))],
+    ["NADE",    padGlyph("G"),           !!(keys["g"]||bt(2))],
+    ["USE",     padGlyph("E"),           !!(keys["e"]||bt(1))],
+    ["HEAL",    padGlyph("C"),           !!(keys["c"]||bt(4))],
+  ];
+  const x=12, w=196, rowH=15, colW=94, h=16+rowH*3+36;
+  const y=VIEW_H-148-h;   // clears the vitals panel plus power-up/nano buff chips
+  const anyHeld=binds.some(b=>b[2]);
+  const mx=(mouse.x-offX)/scale, my=(mouse.y-offY)/scale;
+  const hover=!pad && mx>=x-2&&mx<=x+w+2&&my>=y-2&&my<=y+h+2;
+  const target=(G.elapsed<10||hover||anyHeld)?1:0.4;
+  INPUTCARD.a+=(target-INPUTCARD.a)*0.1;
+  ctx.save(); ctx.globalAlpha=clamp(INPUTCARD.a,0.4,1);
+  panel(x-2,y-2,w+4,h+4);
+  ctx.textAlign="left"; ctx.font="bold 9px 'Rajdhani'"; ctx.fillStyle="#7f93bd";
+  ctx.fillText(pad?(controllerFamily()==="ps"?"CONTROLLER (PS)":"CONTROLLER"):"KEYBOARD + MOUSE", x+8, y+12);
+  binds.forEach((b,i)=>{
+    const cx0=x+8+(i%2)*colW, cy0=y+17+((i/2)|0)*rowH, on=b[2];
+    ctx.fillStyle=on?"#00d9ff":"rgba(255,255,255,.08)";
+    roundRect(cx0,cy0,36,12,3); ctx.fill();
+    ctx.fillStyle=on?"#04121a":"#c8d6f5"; ctx.font="bold 8px 'Rajdhani'"; ctx.textAlign="center";
+    ctx.fillText(String(b[1]).slice(0,6), cx0+18, cy0+9);
+    ctx.textAlign="left"; ctx.fillStyle=on?"#eaf2ff":"#9fb3d9"; ctx.font="bold 8px 'Rajdhani'";
+    ctx.fillText(b[0], cx0+41, cy0+9);
+  });
+  const ay0=y+17+rowH*3+4, cd=p.abilityCd||0, ready=cd<=0;
+  ctx.strokeStyle="rgba(255,255,255,.12)"; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(x+6,ay0-3); ctx.lineTo(x+w-6,ay0-3); ctx.stroke();
+  const fit=t=>{let s=String(t);while(s.length>4&&ctx.measureText(s).width>w-14)s=s.slice(0,-3)+"..";return s;};
+  ctx.font="bold 9px 'Rajdhani'";
+  ctx.fillStyle=ready?"#ffb000":"#6c6f85";
+  ctx.fillText(fit(c.ability.toUpperCase()+" - "+padGlyph("Q")+(ready?"":"  "+cd.toFixed(1)+"s")), x+8, ay0+9);
+  ctx.fillStyle=ready?"#ff8ce0":"#6c6f85";
+  ctx.fillText(fit(c.special.toUpperCase()+" - "+padGlyph("Q")+" + "+(c.specialDir==="up"?"UP":"SIDE")+(ready?"":"  "+cd.toFixed(1)+"s")), x+8, ay0+21);
+  ctx.restore();
+}
 function drawHUD(){
   drawDirectorDebug();
   const p=G.player; if(!p) return;
@@ -7405,7 +7727,7 @@ function drawHUD(){
   ctx.globalAlpha=1;
 
   // ---- bottom left: health + shield ----
-  const bx=16, by=TOUCH.active?174:VIEW_H-70, bw=230;
+  const bx=16, by=touchUIActive()?174:VIEW_H-70, bw=230;
   panel(bx-6, by-8, bw+12, 62);
   // shield bar
   ctx.fillStyle="rgba(0,0,0,.5)"; roundRect(bx,by,bw,14,4); ctx.fill();
@@ -7443,7 +7765,7 @@ function drawHUD(){
   drawInventory(p);
 
   // ---- bottom right: ability + consumables ----
-  if(!TOUCH.active){
+  if(!touchUIActive()){
   const rx=VIEW_W-162,ry=VIEW_H-112,pw=150,ph=100;panel(rx-6,ry-6,pw,ph);
   const fit=(text,max)=>{let out=String(text);while(out.length>1&&ctx.measureText(out).width>max)out=out.slice(0,-2)+"…";return out;};
   const cell=(x,y,w,h,key,label,count,color)=>{ctx.save();ctx.beginPath();ctx.rect(x,y,w,h);ctx.clip();ctx.fillStyle="rgba(255,255,255,.055)";roundRect(x,y,w,h,4);ctx.fill();ctx.strokeStyle="rgba(255,255,255,.1)";ctx.stroke();ctx.textAlign="center";ctx.font="bold 9px 'Rajdhani'";ctx.fillStyle=color;ctx.fillText(fit(padGlyph(key),w-4),x+w/2,y+10);ctx.font="bold 7px 'Rajdhani'";ctx.fillStyle="#dfe9ff";ctx.fillText(fit(label,w-4),x+w/2,y+19);if(count!==undefined){ctx.fillStyle=color;ctx.fillText("×"+count,x+w/2,y+h-3);}ctx.restore();};
@@ -7451,6 +7773,7 @@ function drawHUD(){
   const nt=curNadeType(p),quick=[["C","HEAL",p.heals+p.medkits,"#31e85a"],["V","SHIELD",p.shields+p.bigshields,"#00d9ff"],["G",nt==="pineapple"?"PINE":nt.toUpperCase(),nadeCount(p,nt),nt==="sticky"?"#b84dff":nt==="impulse"?"#3fa9ff":nt==="pineapple"?"#ffe066":"#ff8c42"]];quick.forEach((q,i)=>cell(rx+i*49,ry+34,46,29,...q));
   const utility=[["B","WALL",p.mods,"#ffb000"],["T","TRAP",p.traps||0,"#ff3b5c"],["Y","PAD",p.padkits||0,"#b84dff"],["N","NANO",p.nanos||0,"#ffe066"],["U","FIELD",p.forcefields||0,"#39e6ff"]];utility.forEach((u,i)=>cell(rx+i*29,ry+67,27,27,...u));
   }
+  drawInputCard(p);   /* INPUTCARD: kb/pad live-input reference replaces the touch-control space */
 
   // hit marker at the crosshair
   if(G.hitT>0 && p.alive && !INPUT.pad){
@@ -7487,7 +7810,7 @@ function drawHUD(){
     ctx.fillStyle="rgba(8,10,28,0.85)"; roundRect(VIEW_W/2-170, VIEW_H-140, 340, 52, 8); ctx.fill();
     ctx.strokeStyle="#ffb000"; ctx.lineWidth=2; ctx.strokeRect(VIEW_W/2-170, VIEW_H-140, 340, 52);
     ctx.fillStyle="#ffcb45"; ctx.shadowColor="#ffb000"; ctx.shadowBlur=8; ctx.font="bold 17px 'Rajdhani'";
-    ctx.fillText(TOUCH.active?"TAP DROP":"["+padGlyph("E")+" / SPACE]  DROP", VIEW_W/2, VIEW_H-118); ctx.shadowBlur=0;
+    ctx.fillText(touchUIActive()?"TAP DROP":"["+padGlyph("E")+" / SPACE]  DROP", VIEW_W/2, VIEW_H-118); ctx.shadowBlur=0;
     ctx.fillStyle="#9fb3d9"; ctx.font="12px 'Rajdhani'";
     ctx.fillText("BELOW:  "+districtAt(clamp(G.tram.x,0,W-1)).name, VIEW_W/2, VIEW_H-98);
   }
@@ -7509,7 +7832,7 @@ function drawHUD(){
     ctx.fillStyle="#c8d6f5"; ctx.font="bold 13px 'Rajdhani'";
     ctx.fillText("SPECTATING  ◀ "+(w? w.name:"—")+" ▶", VIEW_W/2, 102);
     ctx.fillStyle="#7f93bd"; ctx.font="11px 'Rajdhani'";
-    ctx.fillText("[A / D] CYCLE   ·   [TAB] STATS   ·   [ESC] LEAVE", VIEW_W/2, 116);
+    ctx.fillText(padActive()? "D-PAD  CYCLE      OPTIONS  MENU" : "[A / D] CYCLE      [TAB] STATS      [ESC] MENU", VIEW_W/2, 116);
     if(G.specStats){
       const sx0=VIEW_W/2-130, sy0=150;
       panel(sx0, sy0, 260, 128);
@@ -7593,7 +7916,7 @@ function drawInteractPrompt(p,worldPromptCount=0){
   if(!p.alive) return;
   let show=null;
   const dd=!NET.active&&nearDoor(p);
-  const ek=TOUCH.active?"TAP  ":"["+padGlyph("E")+"] ";
+  const ek=touchUIActive()?"TAP  ":"["+padGlyph("E")+"] ";
   if(p.riding) show=ek+"DROP";
   else if(p.gliding) show=ek+(p.chuteOpen? "CUT PARACHUTE (fall faster, land here)":"OPEN PARACHUTE (float through platforms)");
   else if(NET.active&&NET.snapshot?.players.find(v=>v.id===NET.id)?.carId) show=ek+"EXIT VEHICLE";
@@ -7608,7 +7931,7 @@ function drawInteractPrompt(p,worldPromptCount=0){
   if(!show) for(const l of G.loot){ if(aabb(p,{x:l.x,y:l.y,w:l.w,h:l.h})){ show=ek+"PICK UP "+l.name.toUpperCase(); break; } }
   if(!show&&NET.active&&NET.snapshot)for(const l of NET.snapshot.loot||[]){if(dist(p.x+p.w/2,p.y+p.h/2,l.x,l.y)<70){show=ek+"PICK UP "+(l.kind==="item"?l.item:(WEAPONS[l.weapon]?.name||l.weapon)).toUpperCase();break;}}
   if(!show && nearZip(p)) show=ek+"GRIND ZIP-RAIL";
-  if(TOUCH.active){const b=document.querySelector(".touchInteract");if(b){b.style.display=show?"block":"none";const s=b.querySelector("small");if(s&&show)s.textContent=show.endsWith("DROP")?"DROP":show.includes("PICK UP")?"TAKE":show.includes("CRATE")?"OPEN":show.includes("BUY")?"BUY":show.includes("DRIVE")?"DRIVE":show.includes("TUBE")?"TUBE":show.includes("ZIP")?"GRIND":show.includes("PARACHUTE")?"CHUTE":"USE";}}
+  if(touchUIActive()){const b=document.querySelector(".touchInteract");if(b){b.style.display=show?"block":"none";const s=b.querySelector("small");if(s&&show)s.textContent=show.endsWith("DROP")?"DROP":show.includes("PICK UP")?"TAKE":show.includes("CRATE")?"OPEN":show.includes("BUY")?"BUY":show.includes("DRIVE")?"DRIVE":show.includes("TUBE")?"TUBE":show.includes("ZIP")?"GRIND":show.includes("PARACHUTE")?"CHUTE":"USE";}}
   if(show&&!worldPromptCount){ ctx.textAlign="center"; ctx.font="bold 13px 'Rajdhani'";
     ctx.fillStyle="rgba(8,10,28,0.85)"; roundRect(VIEW_W/2-110, VIEW_H-108, 220, 26, 6); ctx.fill();
     ctx.strokeStyle="#ffb000"; ctx.lineWidth=1.5; ctx.stroke();
@@ -7652,7 +7975,14 @@ function drawMinimap(x,y,w,h,mode="combat"){
   // faint navigation layer so underground/surface routes still read accurately.
   if(ASSETS.overworld_map){ctx.globalAlpha=.78;ctx.drawImage(ASSETS.overworld_map.img,ox,oy,w-8,h-8);ctx.globalAlpha=1;ctx.fillStyle="rgba(2,5,18,.18)";ctx.fillRect(ox,oy,w-8,h-8);}
   ctx.fillStyle=ASSETS.overworld_map?"rgba(120,160,220,.18)":"rgba(90,110,190,0.5)";
-  for(const p of PLATS){ if(p.x<0||p.x>W) continue; ctx.fillRect(ox+p.x*sx, oy+p.y*sy, Math.max(1,p.w*sx), Math.max(1,p.h*sy)); }
+  for(const p of PLATS){ if(p.x<0||p.x>W||p.room) continue; ctx.fillRect(ox+p.x*sx, oy+p.y*sy, Math.max(1,p.w*sx), Math.max(1,p.h*sy)); }
+  // pocket rooms are teleport pockets: mark their street entrance arches with door icons instead of remote boxes
+  for(const D of DOOR_ENDS){
+    if(!ROOMS.some(R=> D.tx>R.x && D.tx<R.x+R.w)) continue;   // ENTER doors only
+    const dxp=ox+D.x*sx, dyp=oy+D.y*sy;
+    ctx.fillStyle="#ff3dff"; ctx.fillRect(dxp-1.5, dyp-4, 3, 4);
+    ctx.strokeStyle="rgba(255,255,255,0.85)"; ctx.lineWidth=0.75; ctx.strokeRect(dxp-1.5, dyp-4, 3, 4);
+  }
   // safe zone (current) + marked next zone (dashed white)
   if(mode!=="transit"&&!G.drop){ ctx.strokeStyle="#c06bff"; ctx.lineWidth=1.5;
     ctx.strokeRect(ox+G.safe.x*sx, oy+G.safe.y*sy, G.safe.w*sx, G.safe.h*sy);
@@ -7801,6 +8131,7 @@ function renderPauseInventory(){
 const CONTROL_ROWS=[
   ["Move","A/D or ← →","Left stick / D-pad"], ["Jump","W / Space","A / ✕"],
   ["Drop through","S + Jump","D-PAD ▼ + A"], ["Fire","LMB / J","RT"],
+  ["Wall / ledge","Hold toward wall = slide, Jump = wall jump; grab ledge, Jump climbs","Stick toward wall + A"],
   ["Aim mode","Hold RMB / Shift","Hold LT"], ["Aim tilt (locked)","Hold W/S while firing","Left stick ↑↓ while firing"],
   ["Weapons","1 melee · 2-4 loot","RB cycles all"], ["Ability","Q · +dir = special","△ · +stick dir = special"], ["Heal","C","LB"],
   ["Shield","V","D-PAD ▲"], ["Wall","B","L3"], ["Throw","G","X / □"],
@@ -7852,6 +8183,13 @@ function resetLocalSave(){
   setTimeout(()=>location.reload(),350);
 }
 function togglePause(){ if(G.state==="match") setPaused(!G.paused); }
+function finalizeEliminationLog(){
+  // pause-menu exits during the death ragdoll or spectate must record the run exactly once
+  // (enterSpectate/leaveSpectate/endMatch already guard on the same careerLogged single-shot)
+  if(G.player && !G.player.alive && !G.careerLogged){
+    G.careerLogged=true; G.matchXpEarned=CAREER.add(false,G.player.kills,G.player.placement||G.aliveStart);
+  }
+}
 /* ---------------- Spectate flow (post-death) ---------------- */
 function specCandidates(){ return G.ents.filter(e=>e.alive); }
 function enterSpectate(){
@@ -8036,8 +8374,18 @@ function pollMenuGamepad(dt){
         }
         if(edge(0)){ const b=document.getElementById(pbtns[G.pauseSel||0]); if(b&&b.onclick) b.onclick(); }
         if(edge(1)) setPaused(false);
+        if(edge(9)) setPaused(false);   // OPTIONS/MENU toggles the pause menu closed again
         if(edge(2)) document.getElementById("restartBtn").onclick();
         if(edge(3)) document.getElementById("quitBtn").onclick();
+      }
+    } else if(G.state==="match" && G.player && !G.player.alive){
+      // eliminated (death ragdoll or spectate): pollGamepad no longer runs, so OPTIONS/MENU
+      // must open the pause menu from here; d-pad keeps the spectate feed cycling on pad
+      if(edge(9)) togglePause();
+      else if(G.spectating){
+        if(left) cycleSpectate(-1);
+        if(right) cycleSpectate(1);
+        if(edge(3)) G.specStats=!G.specStats;
       }
     }
   }catch(e){}
@@ -8165,7 +8513,7 @@ document.getElementById("fsBtn").onclick=()=>{ try{
 document.getElementById("pauseBtn").onclick=()=>{ togglePause(); };
 document.getElementById("orientationPauseBtn").onclick=()=>{ togglePause(); };
 document.getElementById("orientationLeaveBtn").onclick=()=>{
-  clearGameplayInput();setPaused(false);confParts=[];
+  clearGameplayInput();setPaused(false);confParts=[];finalizeEliminationLog();
   if(G.warmup){quitWarmup();return;}
   if(NET.active){NET.leave();return;}showScreen("title");refreshCareer();syncPresentationState();
 };
@@ -8179,8 +8527,8 @@ function confirmPauseAction(id,label,run){
   }
   clearTimeout(PAUSE_CONFIRM[id]); delete PAUSE_CONFIRM[id]; b.textContent=label; run();
 }
-document.getElementById("restartBtn").onclick=()=>confirmPauseAction("restartBtn","↻ RESTART MATCH",()=>{ if(G.warmup){ setPaused(false); return; } setPaused(false); buildCards(); startMatch(); });
-document.getElementById("quitBtn").onclick=()=>confirmPauseAction("quitBtn",NET.active?"✕ LEAVE MATCH":G.warmup==="queue"?"✕ LEAVE QUEUE":G.warmup?"✕ QUIT TO TITLE":"✕ QUIT TO MENU",()=>{ setPaused(false); confParts=[];if(G.warmup){quitWarmup();return;}if(NET.active){NET.leave();return;}showScreen("title"); refreshCareer(); });
+document.getElementById("restartBtn").onclick=()=>confirmPauseAction("restartBtn","↻ RESTART MATCH",()=>{ if(G.warmup){ setPaused(false); return; } setPaused(false); finalizeEliminationLog(); buildCards(); startMatch(); });
+document.getElementById("quitBtn").onclick=()=>confirmPauseAction("quitBtn",NET.active?"✕ LEAVE MATCH":G.warmup==="queue"?"✕ LEAVE QUEUE":G.warmup?"✕ QUIT TO TITLE":"✕ QUIT TO MENU",()=>{ setPaused(false); confParts=[];finalizeEliminationLog();G.spectating=false;G.specTarget=null;G.deathSeq=null;if(G.warmup){quitWarmup();return;}if(NET.active){NET.leave();return;}showScreen("title"); refreshCareer(); });
 document.getElementById("controlsBtnPause").onclick=()=>{ showControls(true); };
 document.getElementById("controlsBtnTitle").onclick=()=>{ showControls(true); };
 document.getElementById("controlsCloseBtn").onclick=()=>{ showControls(false); };
@@ -8210,6 +8558,7 @@ function loop(now){
   }
   // toast fade
   if(toastT>0){ toastT-=dt; if(toastT<=0) toastEl.classList.remove("show"); }
+  try{ document.body.classList.toggle("touchReady", TOUCH.active && activeInputFamily()==="touch"); }catch(e){}   /* INPUTCARD: touch controls only for the live touch family */
   try{
     const kb=document.getElementById("legendKb"), pd=document.getElementById("legendPad");
     if(kb&&pd){ kb.classList.toggle("hidden", INPUT.pad); pd.classList.toggle("hidden", !INPUT.pad); }
