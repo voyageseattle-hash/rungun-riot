@@ -1,0 +1,3 @@
+deploy-*.zip
+.netlify/
+.DS_Store
