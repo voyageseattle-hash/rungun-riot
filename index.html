@@ -8,6 +8,7 @@
 <!--EMBEDDED_ASSETS-->
 <!--EMBEDDED_INTRO-->
 <!--EMBEDDED_SFX-->
+<!--EMBEDDED_MUSIC-->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Rajdhani:wght@500;600;700&display=swap');
 
@@ -573,7 +574,7 @@ function rollConsumable(x,y){
 // Player-facing info for every pickup: d = one-line effect, u = how to use it.
 // Shown on the pause inventory panel and appended to pickup toasts.
 const ITEM_INFO = {
-  // weapons (equip with 1/2/3, fire with LMB or J)
+  // weapons (slot 1 = soul-bound class melee, loot guns fill slots 2-4; fire with LMB or J)
   pistol:     { d:"Semi-auto sidearm — 11 dmg, 12 rounds. Steady and accurate.", u:"LMB / J fire" },
   smg:        { d:"Full-auto hose — 8 dmg, 26 rounds, fast fire.",               u:"Hold LMB / J" },
   shuriken:   { d:"Arcing blades — 14 dmg, drop over range. Lob at ledges.",     u:"LMB / J fire" },
@@ -1634,7 +1635,7 @@ const SFXFILES=(()=>{
     }
   };
 })();
-function playSfx(key,opt){ try{ return SFXFILES.play(key,opt); }catch(e){ return false; } }
+function playSfx(key,opt){ try{ MSTATE.sfx(key); }catch(e){} try{ return SFXFILES.play(key,opt); }catch(e){ return false; } }
 /* per-weapon shot clips — unmapped weapons (shuriken/bouncer/wave/grapple/...) keep synth */
 const WEAPON_SFX={ pistol:"shot_pistol", smg:"shot_smg", rifle:"shot_rifle", spread:"shot_shotgun",
   sniper:"shot_sniper", rocket:"shot_rocket", laser:"shot_laser", cannon:"shot_cannon", grapple:"grapple_fire" };
@@ -1681,6 +1682,7 @@ const MUSIC=(()=>{
     }
   }
   return {
+    isOn:()=>on,
     start(){ if(!on || !ac()) return;
       try{ if(c.state==="suspended") c.resume(); }catch(e){}
       if(timer) return; next=c.currentTime+0.06; step=0; timer=setInterval(tick,60); },
@@ -1688,6 +1690,135 @@ const MUSIC=(()=>{
     toggle(){ on=!on; PREFS.set("music",on); if(on) this.start(); else this.stop(); return on; },
   };
 })();
+
+/* ---------------- MUSICFILES: mastered track loader (optional; procedural MUSIC is the fallback) ---------------- */
+const MUSICFILES=(()=>{
+  const KEYS=["menu","drop","match","storm","victory","defeat","shop"];
+  const bufs={}, pending={};
+  let ctx=null;
+  function ac(){ if(!ctx){ try{ ctx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } return ctx; }
+  function load(k){
+    if(typeof window==="undefined"||typeof fetch!=="function") return;          // Node/smoke harness: no-op
+    if(!KEYS.includes(k)||bufs[k]||pending[k]) return;
+    const c=ac(); if(!c) return;
+    pending[k]=1;
+    const src=(window.EMBEDDED_MUSIC && window.EMBEDDED_MUSIC[k]) || ("assets/music_"+k+".mp3");
+    try{
+      fetch(src).then(r=>r.ok?r.arrayBuffer():Promise.reject(0))
+        .then(ab=>new Promise((res,rej)=>{ const pr=c.decodeAudioData(ab,res,rej); if(pr&&pr.then) pr.then(res,rej); }))
+        .then(b=>{ bufs[k]=b; delete pending[k]; })
+        .catch(()=>{ delete pending[k]; });                                      // missing/undecodable: synth loop stays
+    }catch(e){ delete pending[k]; }
+  }
+  // the menu bed decodes first (title screen); the full set streams in after the page settles
+  if(typeof window!=="undefined"&&typeof fetch==="function"){
+    try{ load("menu"); setTimeout(()=>{ for(const k of KEYS) load(k); },3500); }catch(e){}
+  }
+  return { ac, has:k=>!!bufs[k], get:k=>bufs[k]||null, load };
+})();
+
+/* ---------------- MSTATE: music state machine (equal-power crossfades + SFX sidechain duck) ----------------
+   States: menu | drop | match | storm | shop | victory | defeat. Purely client-side
+   presentation driven by local flags (G.state, riding/gliding, safe zone, vendors,
+   end screens) — nothing here reads from or sends to NET. While a track is not yet
+   decoded (or files are missing) the procedural MUSIC loop keeps legacy behavior. */
+const MSTATE=(()=>{
+  const ONESHOT={victory:1,defeat:1};
+  const BASE=0.55, DUCK_FLOOR=0.55, DUCK_HOLD=0.8, DUCK_REL=0.2, XFADE=1.2, XFADE_END=0.4;
+  let cur="menu", chA=null, chB=null, master=null;
+  let fadeT=1, fadeDur=1;
+  let stormLatch=false, stormT=0, safeT=0;          // storm: >2s of exposure to enter, 4s safe to leave
+  let shopLatch=false, shopT=0, shopOutT=0;         // shop: 1.5s linger in, 3s hysteresis out
+  let duckT=0, duckCur=1, sfxTimes=[], shotDone=false, tradePost;
+  function now(){ return (typeof performance!=="undefined"&&performance.now)?performance.now():Date.now(); }
+  function ctx(){ return MUSICFILES.ac?MUSICFILES.ac():null; }
+  function mg(){ const c=ctx(); if(!c) return null;
+    if(!master){ try{ master=c.createGain(); master.gain.value=0; master.connect(c.destination); }catch(e){ master=null; } }
+    return master; }
+  function stopCh(ch){ if(ch){ try{ ch.src.stop(); }catch(e){} try{ ch.src.disconnect(); ch.g.disconnect(); }catch(e){} } }
+  function switchTo(key){
+    const c=ctx(), m=mg(), b=MUSICFILES.get(key); if(!c||!m||!b) return false;
+    try{
+      if(c.state==="suspended") c.resume();
+      stopCh(chB); chB=chA; chA=null;
+      const src=c.createBufferSource(), g=c.createGain();
+      src.buffer=b; src.loop=!ONESHOT[key]; g.gain.value=0;
+      src.connect(g); g.connect(m); src.start();
+      if(ONESHOT[key]) src.onended=()=>{ if(chA&&chA.src===src){ stopCh(chA); chA=null; shotDone=true; } };  // one-shot -> silence
+      chA={src,g,key}; fadeT=0; fadeDur=ONESHOT[key]?XFADE_END:XFADE;
+      MUSIC.stop();                                  // a file track owns the mix: park the synth loop
+      return true;
+    }catch(e){ return false; }
+  }
+  function tradePostB(){ if(tradePost===undefined){ try{ tradePost=(typeof BUILDINGS!=="undefined"&&BUILDINGS.find)?(BUILDINGS.find(x=>x.name==="TRADE POST")||null):null; }catch(e){ tradePost=null; } } return tradePost; }
+  function desired(dt){
+    const s=G.state;
+    if(s==="victory"||s==="defeat"){ stormLatch=shopLatch=false; stormT=safeT=shopT=shopOutT=0; return s; }
+    if(s!=="match"){ stormLatch=shopLatch=false; stormT=safeT=shopT=shopOutT=0; return "menu"; }
+    const p=G.player;
+    if(G.warmup) return "match";                     // warm-up skirmish: match bed (0.5x trim below)
+    if(p&&(p.riding||p.gliding)) return "drop";      // tram ride + glider, until landed
+    // STORM: instant on final phases; else >2s taking storm exposure, 4s of safety to revert
+    let out=false;
+    try{ out=!!(p&&p.alive&&G.stormDmg>0&&!inSafe(p.x+p.w/2,p.y+p.h/2)); }catch(e){}
+    if(out){ stormT+=dt; safeT=0; if(stormT>2) stormLatch=true; }
+    else { safeT+=dt; stormT=0; if(safeT>4) stormLatch=false; }
+    if(G.stormPhase>=5) stormLatch=true;
+    if(stormLatch) return "storm";
+    // SHOP: within 140px of a vendor or inside the Trade Post; 1.5s linger in, 3s hysteresis out
+    let shop=false;
+    try{
+      if(p&&p.alive){
+        const cx=p.x+p.w/2, cy=p.y+p.h;
+        for(const V of VENDORS){ if(Math.abs(cx-V.x)<140 && Math.abs(cy-(V.y||2540))<160){ shop=true; break; } }
+        const B=tradePostB(); if(!shop&&B&&entInBuilding(p,B)) shop=true;
+      }
+    }catch(e){}
+    if(shop){ shopT+=dt; shopOutT=0; if(shopT>1.5) shopLatch=true; }
+    else { shopOutT+=dt; shopT=0; if(shopOutT>3) shopLatch=false; }
+    return shopLatch?"shop":"match";
+  }
+  return {
+    state:()=>cur,
+    sfx(key){                                        // sidechain feed: called from playSfx
+      const t=now(); sfxTimes.push(t);
+      while(sfxTimes.length&&t-sfxTimes[0]>300) sfxTimes.shift();
+      if(key==="boom_big"||key==="boom_holy"||sfxTimes.length>=3){ duckT=DUCK_HOLD; duckCur=DUCK_FLOOR; }
+    },
+    update(dt){
+      dt=Math.min(Math.max(dt||0,0),0.1);
+      const on=!!(MUSIC&&MUSIC.isOn&&MUSIC.isOn());
+      const want=desired(dt);
+      if(want!==cur){ shotDone=false; cur=want; if(on&&!switchTo(want)) MUSICFILES.load(want); }
+      else if(on&&!chA&&!shotDone&&MUSICFILES.has(cur)) switchTo(cur);   // buffer arrived late: fade it in
+      // ---- audio below is browser-only (no AudioContext in the QA harness) ----
+      const c=ctx(); if(!c) return; const m=mg(); if(!m) return;
+      if(!on){ stopCh(chA); stopCh(chB); chA=chB=null; try{ m.gain.value=0; }catch(e){} return; }
+      if(chA) MUSIC.stop();                          // playBtn re-arms the synth loop: file track wins
+      // 1.2s equal-power crossfade (0.4s into victory/defeat stingers)
+      fadeT=Math.min(fadeDur,fadeT+dt);
+      const x=fadeDur>0?fadeT/fadeDur:1;
+      try{
+        if(chA) chA.g.gain.value=Math.sin(x*Math.PI/2);
+        if(chB){ chB.g.gain.value=Math.cos(x*Math.PI/2); if(x>=1){ stopCh(chB); chB=null; } }
+      }catch(e){}
+      // sidechain duck: hold at the floor, then 0.2s recovery ramp
+      if(duckT>0) duckT-=dt;
+      else if(duckCur<1) duckCur=Math.min(1,duckCur+dt*((1-DUCK_FLOOR)/DUCK_REL));
+      // situational trims: warm-up 0.5x, spectate 0.6x, pause 0.4x
+      let mult=1;
+      if(G.warmup) mult=0.5;
+      if(G.spectating&&G.state==="match") mult=0.6;
+      if(G.paused&&G.state==="match") mult=Math.min(mult,0.4);
+      try{ m.gain.value=BASE*mult*duckCur; }catch(e){}
+    }
+  };
+})();
+if(typeof window!=="undefined"&&window.addEventListener){
+  const _musGesture=()=>{ try{ const c=MUSICFILES.ac(); if(c&&c.state==="suspended") c.resume(); }catch(e){} };
+  window.addEventListener("pointerdown",_musGesture,{once:true});
+  window.addEventListener("keydown",_musGesture,{once:true});
+}
 
 /* ---------------- Career stats (persist when available) ---------------- */
 const SECRET_NAMES={drain_depths:"DRAIN DEPTHS CACHE",undercut:"UNDERCUT CACHE",crystal_cavern:"CRYSTAL CAVERN CACHE",garage_vault:"GARAGE VAULT"};
@@ -1884,7 +2015,7 @@ const G = {
   safe:{x:0,y:0,w:W,h:H}, targetSafe:null, stormPhase:0, stormTimer:0, stormDmg:0,
   nextStorm:STORM_GRACE, aliveStart:0,
   drop:true, dropT:0, shakeOn:PREFS.get("shake"), reducedFlash:PREFS.get("reducedFlash"),
-  covers:[], airdrops:[], ffields:[], explos:[], craters:[], ragdolls:[], deathSeq:null,
+  covers:[], airdrops:[], ffields:[], explos:[], craters:[], ragdolls:[], tombstones:[], deathSeq:null,
   specTarget:null, specStats:false, careerLogged:false, flashT:0, airdropT:50, hotPOI:null, poiSeen:{}, poiRevealed:{}, poiReveal:null, transientQueue:[], endPOIRecapShown:false,
 };
 function authoritativeLocalPlayer(){return typeof NET!=="undefined"&&NET.active&&NET.snapshot?NET.snapshot.players.find(p=>p.id===NET.id)||G.player:G.player;}
@@ -2060,7 +2191,7 @@ function startWarmup(mode){
   ONBOARD.active=false;                                  // field training never runs inside the sim
   G.warmup=mode==="practice"?"practice":"queue";
   G.ents=[]; G.projs=[]; G.loot=[]; G.crates=[]; G.builds=[]; G.parts=[]; G.beams=[]; G.debris=[]; G.nades=[]; G.traps=[]; G.pads=[]; G.ffields=[];
-  G.rings=[]; G.slashes=[]; G.decoys=[]; G.wells=[]; G.explos=[]; G.craters=[]; G.ragdolls=[]; G.airdrops=[]; G.cars=[]; G.boomers=[];
+  G.rings=[]; G.slashes=[]; G.decoys=[]; G.wells=[]; G.explos=[]; G.craters=[]; G.ragdolls=[]; G.airdrops=[]; G.cars=[]; G.boomers=[]; G.tombstones=[];
   G.elapsed=0; G.stormPhase=0; G.stormDmg=0; G.nextStorm=99999; G.stormState=null; G.targetSafe=null; G.shrinkAnim=null; G.shrinkDur=0;
   G.safe={...WARMUP.zone};                               // bots treat the arena as the zone: nobody wanders off
   G.drop=false; G.dropT=0; G.roomA=1;
@@ -2108,7 +2239,7 @@ function endWarmup(){
   // scrub every transient the practice sim created — startMatch() resets these
   // again for a real match, but the practice range can also exit to the title.
   G.ents=[]; G.projs=[]; G.loot=[]; G.crates=[]; G.builds=[]; G.parts=[]; G.beams=[]; G.debris=[]; G.nades=[]; G.traps=[]; G.pads=[]; G.ffields=[];
-  G.rings=[]; G.slashes=[]; G.decoys=[]; G.wells=[]; G.explos=[]; G.craters=[]; G.ragdolls=[]; G.airdrops=[]; G.covers=[]; G.cars=[];
+  G.rings=[]; G.slashes=[]; G.decoys=[]; G.wells=[]; G.explos=[]; G.craters=[]; G.ragdolls=[]; G.airdrops=[]; G.covers=[]; G.cars=[]; G.tombstones=[];
   dnums.length=0; feed.length=0; G.deathSeq=null; G.spectating=false; G.specTarget=null; G.player=null;
   G.safe={x:0,y:0,w:W,h:H}; G.paused=false; G.careerLogged=false;
 }
@@ -2638,7 +2769,7 @@ function makeEntity(kind, cls, x, y, name){
     hp:c.hp, maxhp:c.hp, shield:0, maxshield:100, alive:true, emote:null, emoteI:0, coins:0,
     dropT:0, climbing:false, groundRef:null, wantClimb:0, mods:0,
     coyoteT:0, jumpBufT:0, jumpHeld:false,
-    riding:false, gliding:false, chuteOpen:false, landed:true, armed:false, seat:0, dropX:0, car:null,
+    riding:false, gliding:false, chuteOpen:false, landed:true, armed:false, seat:0, dropX:0, car:null, carExitLock:0,
     pu:null, sizeMul:1, spdMul:1, burnT:0, burnFrom:null, tubing:null, ramCd:0,
     weapons:[], wi:0, ammo:0, ammoByWeapon:{}, reloading:0, cd:0,
     heals: c.startHeal||0, shields:0, medkits:0, nades:0, bigshields:0, traps:0, padkits:0, stickies:0, impulses:0, nanos:0, forcefields:0, nadeSel:0, regenT:0, stunT:0, channel:null, grapple:null,
@@ -2729,7 +2860,8 @@ function telemetryStepPlayer(p,dt){
 }
 function giveWeapon(e, wid){
   saveWeaponAmmo(e);
-  if(e.weapons.length<3){ e.weapons.push(wid); e.wi=e.weapons.length-1; }
+  // slot 0 = soul-bound class melee (pickaxe pattern); loot fills slots 1-3 (4 slots total)
+  if(e.weapons.length<4){ e.weapons.push(wid); e.wi=e.weapons.length-1; }
   else {
     // full inventory: SWAP — drop the replaced weapon so it isn't lost (soul-bound starter melee never drops)
     let slot=e.wi;
@@ -2836,7 +2968,9 @@ function enterCar(e,car){ e.car=car; car.driver=e; if(e.kind==="player") SFX.abi
 function exitCar(e){
   const car=e.car; if(!car) return;
   car.driver=null; e.car=null;
-  e.x=car.x+car.w/2-e.w/2; e.y=car.y-e.h-4; e.vy=-260; e.vx=car.vx*0.4;
+  e.carExitLock=0.4;   // one press exits; the same press cannot instantly re-enter
+  e.x=car.x+car.w/2-e.w/2; e.y=car.y-e.h-4; e.vy=-300; e.vx=car.vx*0.4;
+  e.onGround=false;
 }
 function dropFromTram(e){
   if(!e.riding) return;
@@ -2875,7 +3009,7 @@ function startMatch(){
   G.rings=[]; G.slashes=[]; G.decoys=[]; G.wells=[]; G.hitT=0; G.hitKill=false; G.hitstop=0; G.kickX=0; G.kickY=0;
   if(!COVER_SPOTS) COVER_SPOTS=buildCoverSpots();
   G.covers=NET.active?[]:COVER_SPOTS.map(s=>({x:s.x,y:s.y,w:s.w,h:s.h,type:s.type,hp:80,maxhp:80,flash:0}));
-  G.airdrops=[]; G.airdropT=50; G.explos=[]; G.craters=[]; G.ragdolls=[];
+  G.airdrops=[]; G.airdropT=50; G.explos=[]; G.craters=[]; G.ragdolls=[]; G.tombstones=[];
   G.deathSeq=null; G.specTarget=null; G.specStats=false; G.careerLogged=false; G.flashT=0;
   G.matchXpEarned=0;
   // Restore the canonical solid terrain for every match. Online never applies
@@ -2917,6 +3051,7 @@ function startMatch(){
   // SKY TRAM — the drop vehicle everyone rides in
   G.tram=NET.active&&NET.snapshot?.tram?{...NET.snapshot.tram,dir:1}:{...DROP_SPEC,dir:1,active:true};
   // player
+  clearGameplayInput(); GP.prev=[];   // flush menu-click latches (Enter/Space/pad A) so frame 1 cannot read as an eject press
   const p=makeEntity("player", G.chosen, -200, 260, "YOU");
   giveWeapon(p, c.startWeapon); p.heals=c.startHeal; p.mods=Math.max(1,p.mods);   // every class: 1 starting Build Module
   p.riding=true; p.landed=false; p.seat=6;
@@ -3553,6 +3688,7 @@ function eliminate(e, from){
   dropItem("heal",   Math.min(2, e.heals||0));
   dropItem("frag",   Math.min(2, e.nades||0));
   if((e.bigshields||0)>0) dropItem("bigshield", 1);
+  if(!G.warmup && !NET.active) spawnTombstone(e.name, e.x+e.w/2, e.y+e.h, e.downedBy);   // memorial tombstone at the death spot
   if(e.kind==="player"){
     // death flow: ragdoll tumble -> voxel burst -> SPECTATE (results screen only on leave / match end)
     G.deathSeq={ x:e.x+e.w/2, y:e.y+e.h/2, vx:(e.vx||0)*0.4+rand(-60,60), vy:Math.min(e.vy,-360),
@@ -3583,6 +3719,43 @@ function checkWin(){
     fillStats("dStats", G.player); showEndPOIRecap(); confetti=false;
   }
 }
+
+/* ---------------- TOMBSTONES: cosmetic memorials at death spots ---------------- */
+function spawnTombstone(name, x, y, by){
+  if(!G.tombstones) G.tombstones=[];
+  // raycast down to the nearest platform top (same surfaces loot settles on);
+  // a death over a true pit with no surface below leaves no marker.
+  let top=Infinity;
+  for(const pl of PLATS){
+    if(pl.gone) continue;
+    if(x<pl.x || x>pl.x+pl.w) continue;
+    if(pl.y>=y-24 && pl.y<top) top=pl.y;
+  }
+  if(top===Infinity){ if(y<=H-40) top=H-40; else return; }   // world floor catches the rest, like loot
+  G.tombstones.push({ x:Math.round(x), y:top, name:String(name||"?").slice(0,14),
+    by: by? String(by).slice(0,14) : null, t:0, wob:rand(-0.05,0.05) });
+  if(G.tombstones.length>60) G.tombstones.shift();           // persists for the match, capped at 60 (oldest culled)
+  spawnParts(x, top-10, "#9aa7bd", 8);                       // dust puff on planting (no SFX)
+}
+// ONLINE: the authoritative snapshot carries every player's x/y and alive flag but no
+// killer attribution, so online tombstones come from alive->dead transitions between
+// consecutive snapshots (position known; the "by <killer>" line is omitted).
+const _netTombMessage=NET.message.bind(NET);
+NET.message=m=>{
+  const prev = m.type==="snapshot" && NET.started && Array.isArray(NET.snapshot?.players)
+    ? NET.snapshot.players.map(p=>({id:p.id, name:p.name, alive:p.alive, x:p.x, y:p.y, h:p.h})) : null;
+  const result=_netTombMessage(m);
+  if(prev && !G.warmup && G.state==="match" && Array.isArray(NET.snapshot?.players)){
+    for(const p0 of prev){
+      if(!p0.alive) continue;
+      const now=NET.snapshot.players.find(q=>q.id===p0.id);
+      if(!now || now.alive) continue;
+      const nx = typeof now.x==="number"? now.x : p0.x, ny = typeof now.y==="number"? now.y : p0.y;
+      if(typeof nx==="number" && typeof ny==="number") spawnTombstone(now.name||p0.name, nx+16, ny+(now.h||p0.h||44), null);
+    }
+  }
+  return result;
+};
 
 /* ---------------- Abilities / items ---------------- */
 function aimPoint(e){
@@ -4452,8 +4625,8 @@ function handleKey(k){
   if(k==="x" && ONBOARD.skip()) return;
   const p=G.player; if(!p||!p.alive) return;
   if(G.paused) return;
-  if(NET.active){const acts={e:"interact",r:"reload",q:"ability",c:"heal",v:"shield",g:"throwable",b:"build",t:"trap",y:"pad",n:"nano",u:"field"};if(acts[k]){NET.actions[acts[k]]=true;return;}if(["1","2","3"].includes(k)){NET.actions.weapon=Number(k)-1;p.wi=NET.actions.weapon;return;}if(["f","x","l"].includes(k))return;}
-  for(const n of [1,2,3]){
+  if(NET.active){if(k==="e"&&p.riding&&!ejectInputReady())return;const acts={e:"interact",r:"reload",q:"ability",c:"heal",v:"shield",g:"throwable",b:"build",t:"trap",y:"pad",n:"nano",u:"field"};if(acts[k]){NET.actions[acts[k]]=true;return;}if(["1","2","3"].includes(k)){NET.actions.weapon=Number(k)-1;p.wi=NET.actions.weapon;return;}if(["f","x","l","4"].includes(k))return;}
+  for(const n of [1,2,3,4]){
     if(k===String(n) && p.weapons[n-1]!==undefined) switchWeapon(p,n-1);
   }
   if(k==="q"){
@@ -4475,8 +4648,10 @@ function handleKey(k){
   }
   if(k==="e") interact(p);
 }
+const EJECT_GRACE=0.5;   // seconds after match start before an eject press counts (kills stale menu-click ejects)
+function ejectInputReady(){ return G.elapsed>=EJECT_GRACE; }
 function interact(p){
-  if(p.riding){p.dropRequested=true;return;}
+  if(p.riding){ if(ejectInputReady()) p.dropRequested=true; return; }
   if(p.gliding){ toggleChute(p); return; }
   if(p.car){ exitCar(p); return; }
   if(tryTraversalCourse(p)) return;
@@ -4484,7 +4659,7 @@ function interact(p){
   if(tryDoor(p)) return;
   if(tryTube(p)) return;
   const car=nearCar(p);
-  if(car && !p.riding && !p.gliding){ enterCar(p,car); return; }
+  if(car && !p.riding && !p.gliding && !(p.carExitLock>0)){ enterCar(p,car); return; }
   tryOpenCrate(p); tryZip(p); pickupLoot(p);
 }
 const COYOTE_TIME=0.11, JUMP_BUFFER_TIME=0.11;
@@ -4922,6 +5097,7 @@ function stepPOIs(dt){
 }
 function update(dt){
   G.t+=dt;
+  try{ MSTATE.update(dt); }catch(e){}                // music state machine ticks in every screen state
   if(G.state!=="match") return;
   NET.tick(dt);
   if(G.paused) return;
@@ -4996,8 +5172,13 @@ function update(dt){
       if(e.kind==="bot" && G.tram.x >= e.dropX) dropFromTram(e);
     }
     const pad=getPad();
-    const pj = keys["e"]||keys["w"]||keys[" "]||keys["arrowup"]
+    const pjHeld = keys["e"]||keys["w"]||keys[" "]||keys["arrowup"]
              ||(pad && ((pad.buttons[0]&&pad.buttons[0].pressed)||(pad.buttons[7]&&pad.buttons[7].pressed)));
+    // eject needs a FRESH press: all eject inputs released once since the ride
+    // began, a rising edge this frame, and the short settle window elapsed
+    if(!pjHeld) G.tram.ejectArmed=true;
+    const pj = pjHeld && !!G.tram.ejectArmed && !G.tram.pjPrev && ejectInputReady();
+    G.tram.pjPrev=pjHeld;
     if(G.player.riding&&pj)G.player.dropRequested=true;
     if(G.player.riding&&G.player.dropRequested&&G.tram.x>=DROP_SPEC.legalX)dropFromTram(G.player);
     if(G.tram.x>=DROP_SPEC.forcedX){
@@ -5069,7 +5250,7 @@ function update(dt){
         }
       }
     }
-    if(car.driver){ const d=car.driver; d.x=car.x+car.w/2-d.w/2; d.y=car.y-16; d.vx=car.vx; d.vy=0; d.onGround=true; }
+    if(car.driver){ const d=car.driver; d.x=car.x+car.w/2-d.w/2; d.y=car.y-26; d.vx=car.vx; d.vy=0; d.onGround=true; }   // seated so only the head clears the roofline
   }
 
   const wasDrop=G.drop;
@@ -5109,6 +5290,7 @@ function update(dt){
     } else if(p.car){
       // driving: aim + fire still allowed (drive-bys are a lifestyle)
       if((mouse.down||keys["j"])) fire(p, mouse.wx, mouse.wy);
+      pollGamepad(p, dt);   // pads stay live in the car: B/O exits via interact, RT fires, right stick aims
     } else if(!p.riding){
       controlPlayer(p,dt);
     }
@@ -5253,6 +5435,7 @@ function update(dt){
     e.stunT=Math.max(0,(e.stunT||0)-dt);
     e.dropT=Math.max(0,e.dropT-dt);
     e.ramCd=Math.max(0,(e.ramCd||0)-dt);
+    e.carExitLock=Math.max(0,(e.carExitLock||0)-dt);
     if(e.emote){ e.emote.t-=dt; if(e.emote.t<=0) e.emote=null; }
     if(e.pu){ e.pu.t-=dt; if(e.pu.t<=0) removePowerup(e);
       else if(Math.random()<0.15) spawnParts(e.x+rand(0,e.w), e.y+rand(0,e.h),
@@ -6282,6 +6465,9 @@ function drawWorld(){
   // hover cars
   for(const car of G.cars){
     if(!vis(car.x-20,car.y-30,car.w+40,car.h+40)) continue;
+    // rider first, car body after: the driver reads as sitting IN the car with
+    // just the head above the roofline instead of standing on top of it
+    if(car.driver && car.driver.alive && car.driver.car===car) drawEntity(car.driver);
     ctx.save();
     ctx.shadowColor="#00d9ff"; ctx.shadowBlur=14;
     const va=ASSETS.vehicle_car;
@@ -6303,6 +6489,8 @@ function drawWorld(){
       ctx.fillStyle="#00d9ff"; ctx.fillRect(car.x, car.y-8, car.w*clamp(car.hp/car.maxhp,0,1), 4);
     }
     ctx.restore();
+    // drive-by readability: the gun arm re-renders above the car body
+    if(car.driver && car.driver.alive && car.driver.car===car) drawHeldWeapon(car.driver);
   }
 
   // crates
@@ -6330,6 +6518,35 @@ function drawWorld(){
       ctx.strokeStyle=cr.opened?"#555": mc? mcol:"#ffcb45"; ctx.lineWidth=2; ctx.stroke();
       if(!cr.opened){ ctx.fillStyle= mc? mcol:"#ffcb45"; ctx.font="bold 16px 'Rajdhani'"; ctx.textAlign="center";
         ctx.fillText(cr.legend?"★": mc?"♛":"?", cr.x+cr.w/2, cr.y+21); }
+    }
+    ctx.restore();
+  }
+
+  // memorial tombstones (cosmetic, world layer behind entities)
+  if(G.tombstones) for(const ts of G.tombstones){
+    if(G.drop) continue;
+    if(!vis(ts.x-22,ts.y-40,44,46)) continue;
+    if(ts.t<1) ts.t=Math.min(1, ts.t+0.08);   // small pop-in as it is planted
+    ctx.save();
+    ctx.translate(ts.x, ts.y);
+    ctx.scale(0.65+0.35*ts.t, 0.65+0.35*ts.t);
+    ctx.rotate(ts.wob||0);
+    ctx.fillStyle="#3a4152"; ctx.fillRect(-16,-1,32,4);                       // dirt mound base
+    ctx.fillStyle="#565e70"; ctx.strokeStyle="#2b3040"; ctx.lineWidth=2;      // rounded headstone ~26x30
+    ctx.beginPath(); ctx.moveTo(-13,0); ctx.lineTo(-13,-17); ctx.arc(0,-17,13,Math.PI,0); ctx.lineTo(13,0);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle="rgba(255,255,255,0.07)"; ctx.fillRect(-10,-26,6,22);       // face sheen
+    ctx.fillStyle="#454c5c"; ctx.beginPath(); ctx.moveTo(8,-25); ctx.lineTo(13,-20); ctx.lineTo(13,-25);
+    ctx.closePath(); ctx.fill();                                              // chipped corner
+    ctx.strokeStyle="rgba(125,249,255,0.85)"; ctx.lineWidth=1.6;              // neon-etched cross
+    ctx.beginPath(); ctx.moveTo(0,-27.5); ctx.lineTo(0,-20.5); ctx.moveTo(-3,-25); ctx.lineTo(3,-25); ctx.stroke();
+    if(dist(ts.x,ts.y,G.cam.x+VIEW_W/2,G.cam.y+VIEW_H/2)<400){                // epitaph readable only up close
+      ctx.textAlign="center";
+      ctx.fillStyle="#7df9ff"; ctx.shadowColor="#7df9ff"; ctx.shadowBlur=5;
+      ctx.font="bold 7px 'Rajdhani'"; ctx.fillText(ts.name.toUpperCase(), 0, -12);
+      if(ts.by){ ctx.fillStyle="#ff9db0"; ctx.shadowColor="#ff9db0"; ctx.shadowBlur=4;
+        ctx.font="6px 'Rajdhani'"; ctx.fillText("by "+ts.by, 0, -4); }
+      ctx.shadowBlur=0;
     }
     ctx.restore();
   }
@@ -6444,7 +6661,7 @@ function drawWorld(){
     ctx.restore();
   }
   // entities
-  for(const e of G.ents){ if(e.alive && !e.riding && vis(e.x-40,e.y-60,e.w+80,e.h+80)) drawEntity(e); }
+  for(const e of G.ents){ if(e.alive && !e.riding && !e.car && vis(e.x-40,e.y-60,e.w+80,e.h+80)) drawEntity(e); }   // drivers draw with their car (occluded by the body)
   NET.draw();
   // death ragdolls (player death sequence + bot elimination tumbles)
   if(G.ragdolls) for(const rd of G.ragdolls) drawRagdoll(rd);
@@ -6850,6 +7067,61 @@ function drawRagdoll(rd){
   else { ctx.fillStyle=rd.color; ctx.fillRect(-10,-16,20,32); }
   ctx.restore();
 }
+function drawHeldWeapon(e, y){
+  // held weapon: rotates with aim (skinned). Split out of drawEntity so car
+  // drivers can have the gun arm re-drawn ABOVE the car body for drive-bys.
+  if(y===undefined) y=e.y;
+  const x=e.x, w=e.w, h=e.h;
+  const wpn=curWeapon(e);
+  if(!wpn) return;
+  const sk=skinOf(wpn.id);
+  const aa=(e.aimAng!==undefined)? e.aimAng : (e.face>0?0:Math.PI);
+  const gx=x+w/2, gy=y+h*0.46;
+  // fixed shoulder hub: gun pivots on one point of the body, nothing swims around
+  ctx.save(); ctx.fillStyle=e.color; ctx.globalAlpha=0.95;
+  ctx.beginPath(); ctx.arc(gx, gy, 3.6, 0, 6.28); ctx.fill();
+  ctx.strokeStyle="rgba(6,8,20,0.8)"; ctx.lineWidth=1.2; ctx.stroke();
+  ctx.restore();
+  ctx.save(); ctx.translate(gx,gy); ctx.rotate(aa);
+  if(Math.cos(aa)<0) ctx.scale(1,-1);   // keep the sprite upright when aiming left
+  const blen=wpn.melee?20:16;
+  if(sk.asset){ ctx.drawImage(sk.asset.img, 6, -6, 24, 12); }
+  else {
+    ctx.fillStyle=sk.c; ctx.shadowColor=sk.glow; ctx.shadowBlur=8;
+    ctx.fillRect(6, -2.5, blen, wpn.melee?3:5);
+    ctx.fillRect(4, -4, 5, 8);          // grip block
+    ctx.shadowBlur=0;
+  }
+  if(e.muzzle>0){
+    const mI=e.muzzle/0.05;
+    ctx.save(); ctx.translate(8+blen,0); ctx.globalAlpha=Math.min(1,mI);
+    ctx.fillStyle="#fff"; ctx.shadowColor=sk.glow; ctx.shadowBlur=14;
+    ctx.beginPath();
+    for(let mi2=0;mi2<6;mi2++){ const ma=mi2*1.047, mr=(mi2%2? 3.5:9)*(0.6+0.4*mI);
+      ctx[mi2?"lineTo":"moveTo"](Math.cos(ma)*mr, Math.sin(ma)*mr); }
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
+}
+// tinted sprite draw: renders a frame through a scratch canvas so hurt-flash and
+// storm silhouettes recolor the entity's REAL art instead of swapping to a placeholder
+const TINTC=document.createElement("canvas"); TINTC.width=128; TINTC.height=128;
+const TINTX=TINTC.getContext("2d");
+function drawTintedSprite(img,sx,sy,sw,sh,dx,dy,dw,dh,color,strength){
+  const cw=Math.max(1,Math.ceil(sw)), ch=Math.max(1,Math.ceil(sh));
+  if(TINTC.width<cw) TINTC.width=cw;
+  if(TINTC.height<ch) TINTC.height=ch;
+  TINTX.save();
+  TINTX.clearRect(0,0,TINTC.width,TINTC.height);
+  TINTX.drawImage(img,sx,sy,sw,sh,0,0,cw,ch);
+  TINTX.globalCompositeOperation="source-atop";
+  TINTX.globalAlpha=clamp(strength,0,1);
+  TINTX.fillStyle=color;
+  TINTX.fillRect(0,0,cw,ch);
+  TINTX.restore();
+  ctx.drawImage(TINTC,0,0,cw,ch,dx,dy,dw,dh);
+}
 function drawEntity(e){
   const bob = e.onGround? Math.sin(G.t*10+ (e.x))* (Math.abs(e.vx)>30?1.5:0) : 0;
   const x=e.x, y=e.y+bob, w=e.w, h=e.h, cx=x+w/2;
@@ -6880,65 +7152,44 @@ function drawEntity(e){
   ctx.ellipse(cx, e.y+h+2, w*0.5, 4, 0,0,6.28); ctx.fill(); ctx.globalAlpha=1;
 
   ctx.save(); ctx.translate(cx,0); ctx.scale(e.face,1); ctx.translate(-cx,0);
+  // storm silhouette: entities caught outside the safe zone render their OWN
+  // current pose frame darkened (real class art, never the pixel placeholder)
+  const stormSil = !G.drop && G.stormDmg>0 && !inSafe(e.x+e.w/2, e.y+e.h/2);
   // pick sprite pose — full 8-pose contract: idle run1 run2 jump fall attack hurt climb
   let pose="idle";
-  if(e.hurtFlash>0.04) pose="hurt";
+  if(e.hurtFlash>0.04 && !stormSil) pose="hurt";   // storm ticks refresh hurtFlash forever; keep movement poses readable
   else if(e.muzzle>0.02) pose="attack";
   else if(e.climbing) pose="climb";
   else if(!e.onGround) pose = e.vy>260? "fall":"jump";
   else if(Math.abs(e.vx)>40) pose = Math.floor(G.t*9)%2? "run1":"run2";
   const POSE_I={idle:0,run1:1,run2:2,jump:3,fall:4,attack:5,hurt:6,climb:7};
   const FALLBACK={fall:"jump",attack:"run1",hurt:"idle",climb:"jump"};
-  ctx.shadowColor=e.color; ctx.shadowBlur=e.iframes>0?16:6;
+  ctx.shadowColor= stormSil? "#c06bff" : e.color;
+  ctx.shadowBlur= stormSil? 12 : (e.iframes>0?16:6);
   const gen=ASSETS["sprite_"+e.cls];
-  if(gen && !flash){
+  if(gen){
     const L=(gen.frames&&gen.frames.length)||4;
     let fi=POSE_I[pose];
     if(fi>=L) fi=POSE_I[FALLBACK[pose]||"idle"]||0;   // 4-frame strips still work
     fi=Math.min(fi, L-1);
     const fr=(gen.frames&&gen.frames[fi])
            ||{sx:fi*(gen.img.width/4), sy:0, sw:gen.img.width/4, sh:gen.img.height};
-    ctx.drawImage(gen.img, fr.sx, fr.sy, fr.sw, fr.sh, x-3, y-3, e.w+6, e.h+4);
+    if(stormSil) drawTintedSprite(gen.img, fr.sx, fr.sy, fr.sw, fr.sh, x-3, y-3, e.w+6, e.h+4, "#1b0a33", 0.82);
+    else if(flash) drawTintedSprite(gen.img, fr.sx, fr.sy, fr.sw, fr.sh, x-3, y-3, e.w+6, e.h+4, "#ffffff", 0.75);
+    else ctx.drawImage(gen.img, fr.sx, fr.sy, fr.sw, fr.sh, x-3, y-3, e.w+6, e.h+4);
   } else {
+    // asset-missing fallback only: procedural pixel figure (still darkened in storm)
     const basePose = SPR_LEGS[pose]? pose : (FALLBACK[pose]||"idle");
-    const img = SPRITES[e.cls][((flash||pose==="hurt")? "f_":"")+basePose];
-    if(img) ctx.drawImage(img, x-3, y-3, e.w+6, e.h+4);
+    const img = SPRITES[e.cls][((flash||pose==="hurt")&&!stormSil? "f_":"")+basePose];
+    if(img){
+      if(stormSil) drawTintedSprite(img, 0, 0, img.width, img.height, x-3, y-3, e.w+6, e.h+4, "#1b0a33", 0.82);
+      else ctx.drawImage(img, x-3, y-3, e.w+6, e.h+4);
+    }
   }
   ctx.shadowBlur=0;
   ctx.restore();
   // held weapon: rotates 360° with aim (skinned)
-  const wpn=curWeapon(e);
-  if(wpn){
-    const sk=skinOf(wpn.id);
-    const aa=(e.aimAng!==undefined)? e.aimAng : (e.face>0?0:Math.PI);
-    const gx=x+w/2, gy=y+h*0.46;
-    // fixed shoulder hub: gun pivots on one point of the body, nothing swims around
-    ctx.save(); ctx.fillStyle=e.color; ctx.globalAlpha=0.95;
-    ctx.beginPath(); ctx.arc(gx, gy, 3.6, 0, 6.28); ctx.fill();
-    ctx.strokeStyle="rgba(6,8,20,0.8)"; ctx.lineWidth=1.2; ctx.stroke();
-    ctx.restore();
-    ctx.save(); ctx.translate(gx,gy); ctx.rotate(aa);
-    if(Math.cos(aa)<0) ctx.scale(1,-1);   // keep the sprite upright when aiming left
-    const blen=wpn.melee?20:16;
-    if(sk.asset){ ctx.drawImage(sk.asset.img, 6, -6, 24, 12); }
-    else {
-      ctx.fillStyle=sk.c; ctx.shadowColor=sk.glow; ctx.shadowBlur=8;
-      ctx.fillRect(6, -2.5, blen, wpn.melee?3:5);
-      ctx.fillRect(4, -4, 5, 8);          // grip block
-      ctx.shadowBlur=0;
-    }
-    if(e.muzzle>0){
-      const mI=e.muzzle/0.05;
-      ctx.save(); ctx.translate(8+blen,0); ctx.globalAlpha=Math.min(1,mI);
-      ctx.fillStyle="#fff"; ctx.shadowColor=sk.glow; ctx.shadowBlur=14;
-      ctx.beginPath();
-      for(let mi2=0;mi2<6;mi2++){ const ma=mi2*1.047, mr=(mi2%2? 3.5:9)*(0.6+0.4*mI);
-        ctx[mi2?"lineTo":"moveTo"](Math.cos(ma)*mr, Math.sin(ma)*mr); }
-      ctx.closePath(); ctx.fill();
-      ctx.restore();
-    }
-    ctx.restore();
-  }
+  drawHeldWeapon(e, y);
 
   // class-icon float
   // name + health bar (bots only)
@@ -7305,15 +7556,16 @@ function panel(x,y,w,h){
 function fmtTime(s){ const m=Math.floor(s/60), ss=Math.floor(s%60); return m+":"+String(ss).padStart(2,"0"); }
 
 function drawInventory(p){
-  const slotW=46, gap=8, n=3, totW=n*slotW+(n-1)*gap;
+  const slotW=46, gap=8, n=NET.active?3:4, totW=n*slotW+(n-1)*gap;   // offline: slot 1 = melee + 3 loot; online stays server's 3-slot model
   const x0=VIEW_W/2-totW/2, y=VIEW_H-58;
   for(let i=0;i<n;i++){
     const x=x0+i*(slotW+gap);
     const wid=p.weapons[i];
     ctx.fillStyle="rgba(8,10,28,0.8)"; roundRect(x,y,slotW,44,6); ctx.fill();
-    ctx.lineWidth=2; ctx.strokeStyle= i===p.wi? "#00d9ff":"rgba(255,255,255,0.12)";
+    const meleeSlot = !NET.active && i===0;   // dedicated pickaxe-style melee slot
+    ctx.lineWidth=2; ctx.strokeStyle= i===p.wi? "#00d9ff": meleeSlot? "rgba(255,176,0,0.35)":"rgba(255,255,255,0.12)";
     if(i===p.wi){ ctx.shadowColor="#00d9ff"; ctx.shadowBlur=10; } ctx.stroke(); ctx.shadowBlur=0;
-    ctx.fillStyle="#7f93bd"; ctx.font="10px 'Rajdhani'"; ctx.textAlign="left"; ctx.fillText((i+1), x+4, y+12);
+    ctx.fillStyle= meleeSlot? "#ffb000":"#7f93bd"; ctx.font="10px 'Rajdhani'"; ctx.textAlign="left"; ctx.fillText((i+1), x+4, y+12);
     if(wid){ const wp=WEAPONS[wid], rc=RARITY[wp.rarity];
       const art=ASSETS["weapon_"+wid];
       if(art&&art.img){
@@ -7505,7 +7757,8 @@ function renderPauseInventory(){
       <div class="use"><span class="pKey">[${esc(key)}]</span> ${esc(use)}</div></div>`;
   };
   // --- LOADOUT ---
-  let h=sec("LOADOUT", p.weapons.length+" / 3");
+  const lootN=p.weapons.filter(id=>!(WEAPONS[id]&&WEAPONS[id].starter)).length;
+  let h=sec("LOADOUT", NET.active? p.weapons.length+" / 3" : "MELEE + "+lootN+" / 3");
   h+=`<div class="pGrid">`;
   if(!p.weapons.length) h+=`<div style="color:#667;font-size:13px">No weapons — open crates!</div>`;
   p.weapons.forEach((wid,i)=>{
@@ -7549,7 +7802,7 @@ const CONTROL_ROWS=[
   ["Move","A/D or ← →","Left stick / D-pad"], ["Jump","W / Space","A / ✕"],
   ["Drop through","S + Jump","D-PAD ▼ + A"], ["Fire","LMB / J","RT"],
   ["Aim mode","Hold RMB / Shift","Hold LT"], ["Aim tilt (locked)","Hold W/S while firing","Left stick ↑↓ while firing"],
-  ["Weapons","1 / 2 / 3","RB cycles"], ["Ability","Q · +dir = special","△ · +stick dir = special"], ["Heal","C","LB"],
+  ["Weapons","1 melee · 2-4 loot","RB cycles all"], ["Ability","Q · +dir = special","△ · +stick dir = special"], ["Heal","C","LB"],
   ["Shield","V","D-PAD ▲"], ["Wall","B","L3"], ["Throw","G","X / □"],
   ["Swap throwable","F","D-PAD ▼"], ["Nano Surge","N","LT + D-PAD ▲"], ["Spike trap","T","R3"],
   ["Launch pad","Y","LT + D-PAD ▼"], ["Interact / pick up","E","B / ○"],
@@ -7966,7 +8219,7 @@ function loop(now){
 if(G.state!=="intro") showScreen("title"); // intro gate reveals the title itself
 refreshCareer();
 requestAnimationFrame(loop);
-/* rev: bot persona intelligence pass */
+/* rev: bugfix pass - tram eject latch, car exit, rider draw order */
 
 </script>
 </body>
