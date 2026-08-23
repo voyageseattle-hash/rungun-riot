@@ -356,13 +356,14 @@
     <button id="contrastBtn" class="sbtn">CONTRAST: STANDARD</button>
     <button id="uiScaleBtn" class="sbtn">UI: STANDARD</button>
     <button id="motionBtn" class="sbtn">MOTION: FULL</button>
+    <button id="rumbleBtn" class="sbtn" title="Controller haptics on hits, kills and damage taken (gamepad only; ignored on browsers without vibration support)">RUMBLE: ON</button>
     <button id="directorBtn" class="sbtn" title="Offline matches only: adaptive pacing gently biases bot aggression, airdrop cadence and loot toward a healthy drama curve">AI DIRECTOR: ON</button>
     <button id="controlsBtnTitle" class="sbtn">HOW TO PLAY</button>
     <button id="aboutBtnTitle" class="sbtn">ABOUT / CREDITS</button>
     <button id="fsBtn" class="sbtn">⛶ FULLSCREEN</button>
   </div>
   <div id="career">CAREER · NO MATCHES YET</div>
-  <div class="buildLabel">RUN GUN RIOT · ONLINE ALPHA · BUILD 2026.08.13-packets-01-04</div>
+  <div class="buildLabel">RUN GUN RIOT · ONLINE ALPHA · BUILD 2026.08.23-update-0040</div>
 </div>
 
 <!-- CLASS SELECT -->
@@ -502,7 +503,7 @@
     <h3>LOCAL SAVE</h3>
     <p>Career records, discoveries, Riot Run times, preferences and weapon skins stay in this browser only.</p>
     <div class="settingsRow" style="justify-content:flex-start;margin-top:12px"><button id="resetSaveBtn" class="sbtn dangerBtn">RESET SAVE DATA</button></div>
-    <div class="buildLabel">ONLINE ALPHA · BUILD 2026.08.13-packets-01-04 · SINGLE-FILE EDITION</div>
+    <div class="buildLabel">ONLINE ALPHA · BUILD 2026.08.23-update-0040 · SINGLE-FILE EDITION</div>
   </div>
   <button id="releaseCloseBtn" class="btn gold" style="margin-top:14px">BACK</button>
 </div>
@@ -580,6 +581,75 @@ const WEAPONS = {
   m_pipe:  { id:"m_pipe",  name:"Pipe Wrecker",    rarity:"common", dmg:23, mag:0, fireRate:0.48, reload:0, speed:0, spread:0, melee:true, range:62, starter:true },
 };
 const AMMO_WEAPON_IDS = Object.keys(WEAPONS).filter(id => !!WEAPONS[id] && WEAPONS[id].mag > 0 && !WEAPONS[id].melee);
+/* ===== WEAPON SWAP TIME — MIRROR OF multiplayer/combat.js =====================
+   Seconds to RAISE the weapon being swapped to. The server owns this (room.js
+   counts it in whole 20Hz ticks as p.swapTicks and publishes swapT in seconds);
+   this copy exists so the offline sim behaves identically and so the online HUD
+   can predict the bar instead of waiting a round trip for it. If you change a
+   number here, change SWAP_PROFILES / WEAPON_SWAP_CLASS in combat.js to match.
+   Every value is a whole multiple of 0.05s so both sides land on the same tick.
+   Anchored against reload: the cheapest reload in the game is the pistol's 1.1s,
+   so every swap is cheaper than a reload and swapping stays a real alternative
+   to reloading — the point of the mechanic. */
+const SWAP_PROFILES = { melee:0.20, sidearm:0.30, rapid:0.35, versatile:0.45, heavy:0.60 };
+const WEAPON_SWAP_CLASS = {
+  pistol:"sidearm", grapple:"sidearm",
+  smg:"rapid", shuriken:"rapid",
+  spread:"versatile", rifle:"versatile", bouncer:"versatile", wave:"versatile",
+  sniper:"heavy", rocket:"heavy", cannon:"heavy", laser:"heavy",
+};
+const WEAPON_SWAP_TIME = Object.fromEntries(Object.keys(WEAPONS).map(id =>
+  [id, SWAP_PROFILES[WEAPON_SWAP_CLASS[id] || (WEAPONS[id].melee ? "melee" : "sidearm")]]));
+function weaponSwapTime(id){ const v=WEAPON_SWAP_TIME[id]; return Number.isFinite(v)? v : SWAP_PROFILES.sidearm; }
+/* ===== HIT LOCATION + RANGE FALLOFF — MIRROR OF multiplayer/combat.js ========
+   Server-authoritative online; this copy exists so the offline sim and warm-up
+   deal the same damage as a live match instead of teaching different habits.
+   Keep the numbers in step with HEADSHOT / FALLOFF_PROFILES / WEAPON_FALLOFF_CLASS
+   in combat.js. `band` is a FRACTION of the target box measured from its top edge,
+   so it scales with a mega-grown body; on the stock 34x44 player it is the top
+   13.2px. 1.6x is a real reward that still leaves a sniper headshot (92.8) short
+   of the 95hp classes. Melee and explosive splash are excluded, matching the
+   server: melee has no ray to place on the body and splash has no locus at all. */
+const HEADSHOT = { multiplier:1.6, band:0.30 };
+const FALLOFF_PROFILES = {
+  scatter:{start:140,end:520,floor:0.32},
+  rapid:{start:340,end:900,floor:0.55},
+  sidearm:{start:420,end:950,floor:0.62},
+  versatile:{start:520,end:1150,floor:0.70},
+  precision:{start:1400,end:2800,floor:0.90},
+  beam:{start:380,end:820,floor:0.68},
+  explosive:{start:0,end:1,floor:1},
+  melee:{start:0,end:1,floor:1},
+};
+const WEAPON_FALLOFF_CLASS = {
+  pistol:"sidearm", grapple:"sidearm",
+  smg:"rapid", shuriken:"rapid",
+  spread:"scatter",
+  rifle:"versatile", bouncer:"versatile", wave:"versatile",
+  sniper:"precision", laser:"beam",
+  rocket:"explosive", cannon:"explosive",
+};
+const WEAPON_FALLOFF = Object.fromEntries(Object.keys(WEAPONS).map(id =>
+  [id, FALLOFF_PROFILES[WEAPON_FALLOFF_CLASS[id] || (WEAPONS[id].melee ? "melee" : "sidearm")]]));
+function weaponFalloffScale(id, distance){
+  const p=WEAPON_FALLOFF[id];
+  if(!p || p.floor>=1 || !Number.isFinite(distance) || !(distance>p.start)) return 1;
+  if(distance>=p.end) return p.floor;
+  return 1-(1-p.floor)*((distance-p.start)/(p.end-p.start));
+}
+/* Resolved damage for one landed shot. `body` is the target AABB the shot actually
+   crossed and (ox,oy) is the MUZZLE, not the current step, so a travelling round is
+   measured over its whole flight exactly as room.js measures it. */
+function shotDamageAt(wid, base, body, ix, iy, ox, oy){
+  const spec = WEAPONS[wid];
+  if(!spec || spec.melee) return { dmg: base, head: false };   // abilities and melee resolve flat, as on the server
+  const head = !!body && Number.isFinite(body.y) && Number.isFinite(body.h) && iy<=body.y+body.h*HEADSHOT.band;
+  const falloff = Number.isFinite(ox)&&Number.isFinite(oy) ? weaponFalloffScale(wid, Math.hypot(ix-ox, iy-oy)) : 1;
+  return { dmg: base*falloff*(head?HEADSHOT.multiplier:1), head };
+}
+/* ===== end mirrored combat tables — multiplayer/test/client-combat-mirror.test.js
+   lifts everything between the SWAP_PROFILES declaration and this line out of the
+   file and diffs it against combat.js, so keep the block contiguous. ===== */
 // glyphs for loot sprites + inventory slots (shared everywhere weapons show as icons)
 const WEAPON_ICONS={grapple:"⌖",pistol:"⌐",smg:"╤",rifle:"═",sniper:"—",cannon:"◙",shuriken:"✧",rocket:"➤",katana:"⟋",katana_myth:"⟋",spread:"≡",bouncer:"◠",wave:"∿",laser:"†",bat:"▮",hammer:"⊤",m_club:"❙",m_baton:"❙",m_katana:"⟋",m_wrench:"⌇",m_slab:"▯",m_deck:"⟋",m_staff:"❘",m_pipe:"⌐"};
 // ===== WEAPON_ANIM: per-weapon animation identity (CLIENT VISUAL ONLY) =====
@@ -1799,20 +1869,20 @@ function tryVend(p, quiet=false){
   else if(V.item==="epic"){
     if(!V.prime && Math.random()<0.2){ p.padkits=(p.padkits||0)+1; if(!quiet){ toast("◉ BOUGHT LAUNCH PAD KIT"); if(!playSfx("vending",{vol:0.55})) SFX.pickup(); } return true; }
     const w=choice(V.prime? ["wave","sniper","rocket","laser","cannon","katana"] : ["wave","sniper","rocket","bouncer"]);
-    giveWeapon(p,w); if(!quiet){ toast("◉ BOUGHT "+WEAPONS[w].name.toUpperCase()); if(!playSfx("vending",{vol:0.55})) SFX.pickup(); } return true; }
+    giveWeapon(p,w); p.swapping=weaponSwapTime(w); if(!quiet){ toast("◉ BOUGHT "+WEAPONS[w].name.toUpperCase()); if(!playSfx("vending",{vol:0.55})) SFX.pickup(); } return true; }
   if(!quiet){ toast("◉ BOUGHT "+V.label); if(!playSfx("vending",{vol:0.55})) SFX.pickup(); }
   return true;
 }
 
 /* ---------------- Durable player preferences ---------------- */
 const PREFS=(()=>{
-  const defaults={v:3,sfx:true,music:true,shake:true,reducedFlash:false,reducedMotion:false,difficulty:"riot",aim:"normal",deadzone:"standard",contrast:false,uiLarge:false,director:true};
+  const defaults={v:3,sfx:true,music:true,shake:true,reducedFlash:false,reducedMotion:false,difficulty:"riot",aim:"normal",deadzone:"standard",contrast:false,uiLarge:false,director:true,rumble:true};
   let mem={...defaults}, L=null;
   try{ localStorage.setItem("__rr_p","1"); localStorage.removeItem("__rr_p"); L=localStorage; }catch(e){}
   try{
     if(L){ const raw=L.getItem("rr_prefs"); if(raw){ const saved=JSON.parse(raw); if(saved&&typeof saved==="object") mem={...defaults,...saved,v:3}; } }
   }catch(e){ mem={...defaults}; }
-  for(const k of ["sfx","music","shake","reducedFlash","reducedMotion","contrast","uiLarge","director"]) if(typeof mem[k]!=="boolean") mem[k]=defaults[k];
+  for(const k of ["sfx","music","shake","reducedFlash","reducedMotion","contrast","uiLarge","director","rumble"]) if(typeof mem[k]!=="boolean") mem[k]=defaults[k];
   if(!DIFFICULTY[mem.difficulty]) mem.difficulty="riot";
   if(!["low","normal","high"].includes(mem.aim)) mem.aim="normal";
   if(!["tight","standard","relaxed"].includes(mem.deadzone)) mem.deadzone="standard";
@@ -2097,6 +2167,7 @@ const SFX = (()=>{
     open:()=>{ blip(520,0.06,"square",0.04); setTimeout(()=>blip(760,0.08,"square",0.04),60); },
     bounce:()=>blip(300,0.12,"sine",0.06),
     ability:()=>blip(440,0.14,"triangle",0.05),
+    headshot:()=>{ blip(1180,0.045,"square",0.05); setTimeout(()=>blip(1720,0.07,"square",0.045),36); },
     beep:()=>blip(1350,0.05,"square",0.04),
     down:()=>blip(140,0.2,"sawtooth",0.06),
     storm:()=>blip(90,0.3,"sawtooth",0.03),
@@ -2656,7 +2727,7 @@ function hydratePreferredRiotTag(profileName){
 function onlineSelfTag(){
   return String(NET?.sessionName||NET?.snapshot?.players?.find?.(p=>p.id===NET.id)?.name||NET?.rosterMeta?.get?.(NET.id)?.name||NET?.profile?.name||currentRiotTag());
 }
-const ONLINE_PROTOCOL=8,ONLINE_BUILD="2026.08.13-packets-01-04";
+const ONLINE_PROTOCOL=8,ONLINE_BUILD="2026.08.23-update-0040";
 // The controlled online-alpha client and authoritative WebSocket service share
 // this canonical endpoint. The query-string override remains available for QA.
 const NET_DEFAULT_SERVER="wss://rungun.45-32-229-199.sslip.io";
@@ -2808,19 +2879,29 @@ function netDecodeAbilityEvent(source){
 function netActorVisual(id){
   if(!id)return null;
   let state=NET.actorVisuals.get(id);
-  if(!state){state={id,lastHp:null,lastShield:null,hurtUntil:0,castUntil:0,fireUntil:0,recoilBorn:0,recoilUntil:0,recoilMs:1,muzzleUntil:0,weaponId:null,lastSeen:netNow(),aimAng:null};NET.actorVisuals.set(id,state);}
+  if(!state){state={id,lastHp:null,lastShield:null,lastAlive:null,lastKills:null,hurtUntil:0,castUntil:0,fireUntil:0,recoilBorn:0,recoilUntil:0,recoilMs:1,muzzleUntil:0,weaponId:null,lastSeen:netNow(),aimAng:null};NET.actorVisuals.set(id,state);}
   return state;
 }
 function netTrackSnapshotPlayers(players=[]){
-  const now=netNow(),live=new Set();
+  const now=netNow(),live=new Set(),deaths=[];let killsGained=0;
   for(const player of players){
     if(!player?.id)continue;live.add(player.id);
     const state=netActorVisual(player.id),hp=Number(player.hp),shield=Number(player.shield);
     if(Number.isFinite(hp)&&state.lastHp!==null&&hp<state.lastHp-.01)state.hurtUntil=Math.max(state.hurtUntil,now+180);
     if(Number.isFinite(shield)&&state.lastShield!==null&&shield<state.lastShield-.01)state.hurtUntil=Math.max(state.hurtUntil,now+140);
     if(Number.isFinite(hp))state.lastHp=hp;if(Number.isFinite(shield))state.lastShield=shield;
+    /* ONLINE KILL CONFIRM: alive->dead transitions name the victims, and the local row's own
+       `kills` counter is the server's authoritative "that one was yours". Both are already in
+       every snapshot, so no protocol change is needed. lastKills starts null, so joining or
+       reconnecting mid-match never replays a burst of stale kill confirms. */
+    if(state.lastAlive===true&&player.alive===false&&player.id!==NET.id)deaths.push(player);
+    state.lastAlive=player.alive!==false;
+    if(player.id===NET.id){const k=Number(player.kills);
+      if(Number.isFinite(k)){if(Number.isFinite(state.lastKills)&&k>state.lastKills)killsGained=k-state.lastKills;state.lastKills=k;}}
     state.lastSeen=now;
   }
+  for(const victim of deaths)netDeathBurst(victim);
+  if(killsGained>0)netKillFeedback(killsGained,deaths,now);
   if(NET.actorVisuals.size>NET_ACTOR_VISUAL_CAP){
     const stale=[...NET.actorVisuals.entries()].filter(([id])=>!live.has(id)).sort((a,b)=>a[1].lastSeen-b[1].lastSeen);
     while(NET.actorVisuals.size>NET_ACTOR_VISUAL_CAP&&stale.length)NET.actorVisuals.delete(stale.shift()[0]);
@@ -2870,7 +2951,7 @@ function netRemoteEntity(player){
     hurtFlash:state&&state.hurtUntil>now ? .12 : 0,castT:state&&state.castUntil>now ? .12 : 0,weaponFireT:state&&state.fireUntil>now ? .1 : 0,weaponRecoil:recoil,
     emote:player.emote?.s?{t:Math.max(0,player.emote.t),s:player.emote.s}:null,iframes:0,muzzle:state&&state.muzzleUntil>now ? .05 : 0,ledge:false,ledgePoseT:0,weapons,wi,
     ammo:Number.isFinite(Number(player.ammo))?Number(player.ammo):0,ammoByWeapon:normalizeWeaponMap(player.ammoByWeapon,true),
-    reserveByWeapon:normalizeWeaponMap(player.reserveByWeapon,false),reloading:Number(player.reloadT)||0,channel:null,
+    reserveByWeapon:normalizeWeaponMap(player.reserveByWeapon,false),reloading:Number(player.reloadT)||0,swapping:Number(player.swapT)||0,channel:null,
     aimAng:state&&Number.isFinite(state.aimAng)?state.aimAng:(face>0?0:Math.PI)
   };
 }
@@ -3093,6 +3174,10 @@ function netDecodeWeaponEvent(source){
   event.x=source[5+offset];event.y=source[6+offset];event.aimX=source[7+offset];event.aimY=source[8+offset];
   event.targetX=source[9+offset];event.targetY=source[10+offset];
   event.material=NET_WEAPON_MATERIALS[source[11+offset]]||"none";event.seed=source[12+offset];
+  /* Variable-length tail: the server appends [damage,headshot] only on a player
+     impact (room.js compactWeaponFxEvent), so a 14-wide row is a fire event or a
+     scenery impact and carries neither. */
+  if(hasFamily&&source.length>=16){event.damage=source[14];event.headshot=!!source[15];}
   return event;
 }
 function netNormalizeWeaponEvent(source,snapshotTick=0){
@@ -3101,6 +3186,9 @@ function netNormalizeWeaponEvent(source,snapshotTick=0){
   event.weaponId=String(event.weaponId||event.weapon||"pistol");
   event.family=netWeaponFamily(event);event.phase=netWeaponPhase(event);event.material=netWeaponMaterial(event);
   event.seed=Number.isFinite(Number(event.seed))?Number(event.seed):event.seq;
+  const damage=Number(event.damage);
+  if(Number.isFinite(damage)&&damage>0){event.damage=damage;event.headshot=!!event.headshot;}
+  else{delete event.damage;delete event.headshot;}
   return event;
 }
 function netWeaponDirection(event){
@@ -3161,6 +3249,114 @@ function netPlayWeaponSfx(event,now=netNow()){
     if(!playSfx("melee_hit",{vol:volume*.72}))SFX.hit();
   }else if(local||distance<520)SFX.hit();
 }
+/* ===== ONLINE PER-SHOT COSMETICS =====
+   Mirrors the tail of the offline fire() for the LOCAL player only: per-family screen
+   kick, the 0.7 muzzle shake and the ejected shell casing. Offline these live in fire(),
+   which never runs online, so firing a gun online moved the camera not at all.
+   Driven by the server's own weapon_fx "fire" event, so a shot the server rejected
+   (no ammo, dead, driving) correctly produces no kick. Melee is excluded because the
+   offline melee branch returns before the kick/casing block — same rule, both modes. */
+function netWeaponFireFeedback(event,dir){
+  const player=G.player;if(!NET.active||G.warmup||!player)return false;
+  const wpn=WEAPONS[event.weaponId];if(!wpn||wpn.melee)return false;
+  const an=weaponAnim(wpn),kk=2.6*clamp(.6+(an.kick||0)*.12,.6,1.9);
+  if(!PREFS.get("reducedMotion")){G.kickX=-dir.x*kk;G.kickY=-dir.y*kk;}
+  if(G.shakeOn&&!PREFS.get("reducedMotion"))G.shake=Math.min(6,(G.shake||0)+.7);
+  const face=Number(player.face)<0?-1:1,cx=player.x+player.w/2,cy=player.y+player.h/2;
+  if(G.parts.length<560)G.parts.push({x:cx-face*6,y:cy-6,vx:-face*rand(60,150),vy:rand(-280,-160),life:rand(.5,.8),color:"#ffd166",r:2});   // shell casing
+  return true;
+}
+/* ===== ONLINE ELIMINATION BURST =====
+   Offline, eliminate() bursts every downed fighter into class-coloured voxels and (for
+   bots) a tumbling ragdoll. Online nobody is eliminated client-side, so players simply
+   winked out of existence. Rebuilt from the snapshot's alive->dead transition: the burst
+   only, not the ragdoll, because a ragdoll needs the victim's velocity and a local physics
+   step that online does not have — and inventing one would drift from the server's truth.
+   Distance-culled at 1300px like netAbilityFeedback(), and spawnParts() is hard-capped. */
+function netDeathBurst(victim){
+  if(!NET.active||G.warmup)return false;
+  const x=Number(victim?.x)+17,y=Number(victim?.y)+22,player=G.player;
+  if(!Number.isFinite(x)||!Number.isFinite(y))return false;
+  if(player&&Math.hypot(x-(player.x+player.w/2),y-(player.y+player.h/2))>1300)return false;
+  const cls=CLASSES[victim.classId]||CLASSES.jumper;
+  spawnParts(x,y,cls.c,26);
+  if(G.rings)G.rings.push({x,y,r:6,t:.4,c:cls.c,sp:520,lw:3});
+  return true;
+}
+/* ===== ONLINE KILL CONFIRM =====
+   Offline this whole block lives in eliminate(): gold hitmarker, kill-confirm SFX, kill
+   rumble, the WOW streak banner and the kill-feed line. eliminate() is unreachable online,
+   so an online match had a permanently blank kill feed and no confirmation of a kill at all.
+   The server broadcasts no elimination event, but every snapshot already carries each
+   player's `alive` flag and the local player's authoritative `kills` count — together those
+   are an exact kill confirm, so this needs no protocol change either.
+   Victim attribution is best-effort: with exactly one death in the snapshot it is certain;
+   with several simultaneous deaths the nearest one is named, which is cosmetic only. */
+const NET_HIT_KILL_HOLD_MS=320;
+function netKillFeedback(gained,deaths=[],now=netNow()){
+  if(!NET.active||G.warmup)return false;
+  const player=G.player,pool=deaths.slice();
+  if(player&&pool.length>1)pool.sort((a,b)=>Math.hypot((Number(a.x)||0)-player.x,(Number(a.y)||0)-player.y)-Math.hypot((Number(b.x)||0)-player.x,(Number(b.y)||0)-player.y));
+  NET.hitKillUntil=now+NET_HIT_KILL_HOLD_MS;   // keeps the marker gold if an impact event lands in the same batch
+  G.hitT=Math.max(G.hitT||0,.3);G.hitKill=true;G.hitHead=false;
+  if(!PREFS.get("reducedMotion"))G.hitstopRender=Math.max(G.hitstopRender||0,.045);   // matches the offline kill freeze
+  rumble("kill");
+  playSfx("kill_confirm",{vol:.7});
+  const mine=String((player&&player.name)||NET.sessionName||"YOU");
+  for(let i=0;i<Math.min(gained,4);i++){
+    const victim=pool[i]||pool[0]||null,name=String(victim&&victim.name||"ENEMY");
+    try{wowKill({name});}catch(err){}
+    feed.unshift({t:4.5,txt:mine+"  ⚔  "+name});
+    if(victim&&G.rings&&Number.isFinite(Number(victim.x)))G.rings.push({x:Number(victim.x)+17,y:Number(victim.y)+22,r:6,t:.5,c:"#ffe066"});
+  }
+  while(feed.length>5)feed.pop();
+  return true;
+}
+/* ===== ONLINE HIT CONFIRM =====
+   Offline, every "you connected" cue comes from applyDamage(): hitmarker, floating
+   damage number, hit rumble. Online applyDamage() is unreachable — G.ents holds only
+   the local player and combat is resolved server-side (see ONLINE_FEEL_AUDIT.md) — so a
+   landed shot produced no hitmarker, no shake and no haptics whatsoever.
+
+   The server already broadcasts exactly the event needed, so this costs NO protocol
+   change: recordWeaponFxEvent(...,"impact",{material:"player"}) is emitted from the only
+   two server sites that just dealt damage to an actor (room.js melee branch, and
+   recordProjectileWeaponImpact() via traceProjectile()), and its actorId is the ATTACKER.
+   phase "impact" + material "player" + actorId===NET.id is therefore an authoritative
+   "your shot landed on somebody" confirm.
+
+   What that event does NOT carry is the damage dealt, so the floating damage number
+   The impact event now ALSO carries the server's resolved `damage` and a `headshot`
+   flag (room.js recordWeaponFxEvent), so the floating damage number online is the real
+   post-shield, post-multiplier figure the server actually applied — not an inference
+   from snapshot hp deltas, which mis-attributes whenever two attackers land inside the
+   same 50ms window. The weapon's nominal damage is still the fallback for weighting
+   the feel when an older server sends a 14-wide row with no damage tail. */
+function netWeaponHitFeedback(event,now=netNow()){
+  if(!NET.active||G.warmup)return false;
+  if(event.actorId!==NET.id||netWeaponPhase(event)!=="impact"||netWeaponMaterial(event)!=="player")return false;
+  const resolved=Number(event.damage),hasDamage=Number.isFinite(resolved)&&resolved>0;
+  const nominal=hasDamage?resolved:(Number(WEAPONS[event.weaponId]?.dmg)||14);
+  const headshot=!!event.headshot,weight=clamp(nominal/24,.5,2.4)*(headshot?1.35:1),dir=netWeaponDirection(event);
+  G.hitT=Math.max(G.hitT||0,headshot?.2:.14);
+  G.hitKill=(NET.hitKillUntil||0)>now;   // a kill confirmed from the same snapshot keeps the gold marker
+  G.hitHead=headshot&&!G.hitKill;        // a kill marker outranks the headshot marker
+  if(G.shakeOn&&!PREFS.get("reducedMotion"))G.shake=Math.min(10,(G.shake||0)+1.5*weight);
+  G.kickX=(G.kickX||0)-dir.x*1.4*weight;G.kickY=(G.kickY||0)-dir.y*1.4*weight;
+  if(!PREFS.get("reducedMotion"))G.hitstopRender=Math.max(G.hitstopRender||0,Math.min(.020,.004+nominal*.0004));   // same curve as offline: pistol ~8ms, rocket/sniper ~20ms
+  /* ONLINE DAMAGE NUMBERS: same pool, same colour tiers and same 40-entry cap as the
+     offline applyDamage() push, placed at the server's own impact point. Headshots get
+     their own tier colour on top of the marker + SFX tell. */
+  if(hasDamage){
+    dnums.push({ x:event.targetX+rand(-8,8), y:event.targetY-10, vy:-70, t:0.8, txt:Math.round(resolved),
+      c: headshot? "#ff9f1a" : resolved>=30? "#ffe066" : resolved>=15? "#5debff" : "#ffffff",
+      big: headshot||resolved>=30 });
+    if(dnums.length>40) dnums.shift();
+  }
+  if(headshot)SFX.headshot();
+  rumble("hit");
+  return true;
+}
 function netConsumeWeaponEvents(events=[],snapshotTick=0,audible=true){
   if(!Array.isArray(events))return 0;
   const now=netNow();let added=0;
@@ -3177,10 +3373,11 @@ function netConsumeWeaponEvents(events=[],snapshotTick=0,audible=true){
       if(phase==="fire"){
         const style=netWeaponStyle(event),recoilMs=style==="explosive"||style==="precision"?180:style==="melee"||style==="scatter"?150:105;
         state.fireUntil=Math.max(state.fireUntil,now+Math.max(105,recoilMs));state.recoilBorn=now;state.recoilMs=recoilMs;state.recoilUntil=Math.max(state.recoilUntil,now+recoilMs);state.muzzleUntil=Math.max(state.muzzleUntil,now+(style==="explosive"?105:75));
-        if(event.actorId===NET.id&&G.player){G.player.muzzle=.05;G.player.aimAng=state.aimAng;G.player.weaponFireT=.1;}
+        if(event.actorId===NET.id&&G.player){G.player.muzzle=.05;G.player.aimAng=state.aimAng;G.player.weaponFireT=.1;netWeaponFireFeedback(event,dir);}
       }
     }
     if(audible)netPlayWeaponSfx(event,now);
+    if(audible)netWeaponHitFeedback(event,now);   // ONLINE HIT CONFIRM: server-authoritative "your shot landed"
     added++;
   }
   return added;
@@ -3682,10 +3879,50 @@ function netBuildingFacadeBodies(){
   return bodies;
 }
 function netPredictGeometry(){return PLATS.filter(p=>!p.gone).concat((NET.snapshot?.builds||[]).filter(b=>b.hp>0),(NET.snapshot?.elevators||[]),netBuildingFacadeBodies());}
-function netPredictStep(body,input,dt=NET_STEP){
+// SURFACE MOTION (online prediction): must mirror multiplayer/room.js Room.surfaceMotion()
+// bit-for-bit, and this zone table must stay identical to the manifest's SURFACE_EFFECT_SPECS
+// (multiplayer/generate-world-manifest.js L180-185). Water and bramble are derived from the very
+// WATERS/BRAMBLES arrays that generator extracts from THIS FILE, so they cannot drift. Ice and
+// wind are literals there because hazardStep() (~L1073) inlines them, so they are literals here
+// too, and multiplayer/test/prediction-parity.browser.js pins the two tables against each other.
+// Lava/glade/burn are damage or heal only -- they never touch velocity, so surfaceMotion (and
+// therefore this mirror) deliberately ignores them; room.js applySurfaceEffects() owns those and
+// they are NOT predicted, exactly as before.
+const NET_TICK_RATE=20;
+const NET_SURFACE_ICE=[{x:8400,y:0,w:1200,h:2600,control60:0.045}];
+const NET_SURFACE_WIND=[{x:1200,y:0,w:1200,h:2540,frequency:0.55,force:430,highForce:780,highY:900}];
+const NET_SURFACE_WATER=WATERS.map(v=>({x:v[0],y:v[1],w:v[2],h:v[3],feetPadding:22,speedMultiplier:0.82}));
+const NET_SURFACE_BRAMBLE=BRAMBLES.map(v=>({x:v[0],y:v[1],w:v[2],h:v[3],speedMultiplier:0.86}));
+// tickNo is the AUTHORITATIVE server tick this input will be simulated on. Room.step() bumps
+// this.tickNo BEFORE stepping bodies, so a snapshot's state is the product of tick snapshot.tick
+// and the first un-acked input runs on snapshot.tick+1 (see NET.reconcile below). Only the wind
+// term reads it; ice, water and bramble are purely positional and so are exactly predictable.
+// A missing/NaN tick makes only the wind term NaN, which Number.isFinite() below then drops --
+// prediction degrades to today's no-wind behaviour instead of poisoning vx.
+function netSurfaceMotion(body,tickNo){
+  const motion={speedMultiplier:1};if(body.gliding)return motion;const cx=body.x+body.w/2,feet=body.y+body.h;
+  for(const effect of NET_SURFACE_ICE)if(body.onGround&&cx>=effect.x&&cx<effect.x+effect.w&&body.y<effect.y+effect.h)motion.iceControl60=effect.control60;
+  for(const effect of NET_SURFACE_WIND)if(!body.onGround&&!body.climbing&&cx>effect.x&&cx<effect.x+effect.w&&body.y<effect.y+effect.h)motion.windAcceleration=Math.sin(tickNo/NET_TICK_RATE*effect.frequency)*(body.y<effect.highY?effect.highForce:effect.force);
+  for(const effect of NET_SURFACE_WATER)if(body.x+body.w>effect.x&&body.x<effect.x+effect.w&&feet>effect.y&&feet<effect.y+effect.h+effect.feetPadding)motion.speedMultiplier*=effect.speedMultiplier;
+  for(const effect of NET_SURFACE_BRAMBLE)if(body.x+body.w>effect.x&&body.x<effect.x+effect.w&&feet>effect.y&&feet<effect.y+effect.h)motion.speedMultiplier*=effect.speedMultiplier;
+  return motion;
+}
+function netPredictStep(body,input,dt=NET_STEP,tickNo=0){
+  // surfaceMotion is sampled from the PRE-STEP body, exactly like room.js evaluates
+  // this.surfaceMotion(p) as an argument to stepBody() -- body.climbing and body.onGround are
+  // still last tick's values here, which is what the server reads too.
+  const motion=netSurfaceMotion(body,tickNo);
   const platforms=body.gliding&&body.chuteOpen?[]:netPredictGeometry(),overlapX=p=>body.x+body.w>p.x&&body.x<p.x+p.w;
   const cx=body.x+body.w/2,cy=body.y+body.h/2,ladder=LADDERS.find(l=>cx>l.x-10&&cx<l.x+l.w+10&&cy>l.y&&cy<l.y+l.h);
-  const dir=(input.right?1:0)-(input.left?1:0);body.vx=dir*(body.speed||280);if(dir)body.face=dir;
+  // SURFACE MOTION: these four statements are a line-for-line mirror of multiplayer/world.js
+  // stepBody() -- same order, same constants, same arithmetic. Do not "simplify" them; the
+  // order of the ice lerp, the wind add and the speed multiply is what makes the two sides
+  // agree bit-for-bit (multiplayer/test/prediction-parity.browser.js).
+  const dir=(input.right?1:0)-(input.left?1:0),targetVx=dir*(body.speed||280);
+  if(motion?.iceControl60){const alpha=1-Math.pow(1-motion.iceControl60,dt*60);body.vx=(body.vx||0)+(targetVx-(body.vx||0))*alpha;}else body.vx=targetVx;
+  if(Number.isFinite(motion?.windAcceleration))body.vx+=motion.windAcceleration*dt;
+  if(Number.isFinite(motion?.speedMultiplier))body.vx*=motion.speedMultiplier;
+  if(dir)body.face=dir;
   const climb=(input.down?1:0)-(input.up?1:0);body.climbing=!!(ladder&&climb);
   // WALLKIT (online prediction): must mirror multiplayer/world.js stepBody bit-for-bit.
   // input.jump is already an edge-latched, single-tick pulse (NET.tick()'s jumpEdge /
@@ -3721,7 +3958,7 @@ function netPredictStep(body,input,dt=NET_STEP){
   if(body.onGround)body.wallJumps=0;
   return body;
 }
-NET.resetPrediction=function(){this.started=false;this.seq=0;this.sendT=0;this.jumpHeld=false;this.padActionsReady=false;this.weaponQueued=false;this.weaponPendingSeq=null;this.snapshot=null;this.snapshots=[];this.lastSnapshotTick=-1;this.lastAppliedTick=-1;this.lastAck=0;this.pendingInputs=[];this.predicted=null;this.renderViewTickQ=null;this.renderOffsetX=this.renderOffsetY=0;this.privateState=null;this.privateFrames=new Map();this.terrainKey=null;this.lastInteractionEventSeq=0;this.abilityVisuals=[];this.abilityEventSeen=new Set();this.abilityEventOrder=[];this.abilitySfxTimes=[];this.weaponVisuals=[];this.weaponEventSeen=new Set();this.weaponEventOrder=[];this.weaponProjectileState=new Map();this.weaponSfxTimes=[];this.hauntVisuals=[];this.hauntEventSeen=new Set();this.hauntEventOrder=[];this.hauntSfxTimes=[];this.actorVisuals=new Map();this.hirelingFrames=[];this.hirelingsBySlot=new Map();this.hirelingsRendered=[];this.matchSyncPending=false;this.matchSyncStartedAt=0;this.matchSyncSnapshotSeen=false;this.matchSyncTimedOut=false;this.matchSyncTimeoutWarned=false;this.matchSyncAssetTimeoutMs=12000;document.getElementById("matchSyncOverlay")?.classList.add("hidden");};
+NET.resetPrediction=function(){this.started=false;this.seq=0;this.sendT=0;this.jumpHeld=false;this.padActionsReady=false;this.weaponQueued=false;this.weaponPendingSeq=null;this.snapshot=null;this.snapshots=[];this.lastSnapshotTick=-1;this.lastAppliedTick=-1;this.lastAck=0;this.pendingInputs=[];this.predicted=null;this.predictTick=0;this.renderViewTickQ=null;this.renderOffsetX=this.renderOffsetY=0;this.privateState=null;this.privateFrames=new Map();this.terrainKey=null;this.lastInteractionEventSeq=0;this.abilityVisuals=[];this.abilityEventSeen=new Set();this.abilityEventOrder=[];this.abilitySfxTimes=[];this.weaponVisuals=[];this.weaponEventSeen=new Set();this.weaponEventOrder=[];this.weaponProjectileState=new Map();this.weaponSfxTimes=[];this.hauntVisuals=[];this.hauntEventSeen=new Set();this.hauntEventOrder=[];this.hauntSfxTimes=[];this.actorVisuals=new Map();this.hirelingFrames=[];this.hirelingsBySlot=new Map();this.hirelingsRendered=[];this.matchSyncPending=false;this.matchSyncStartedAt=0;this.matchSyncSnapshotSeen=false;this.matchSyncTimedOut=false;this.matchSyncTimeoutWarned=false;this.matchSyncAssetTimeoutMs=12000;document.getElementById("matchSyncOverlay")?.classList.add("hidden");};
 NET.beginMatchSync=function(reason="Waiting for the authoritative match snapshot before gameplay starts."){this.matchSyncPending=true;this.matchSyncStartedAt=netNow();this.matchSyncSnapshotSeen=false;this.matchSyncTimedOut=false;this.matchSyncTimeoutWarned=false;this.matchSyncAssetTimeoutMs=12000;const overlay=document.getElementById("matchSyncOverlay"),status=document.getElementById("matchSyncStatus"),progress=document.getElementById("matchSyncProgress");if(overlay){overlay.classList.remove("hidden");overlay.setAttribute("aria-hidden","false");}if(status)status.textContent=String(reason);if(progress)progress.textContent="Syncing…";this.updateMatchSyncStatus();clearGameplayInput();};
 NET.finishMatchSync=function(){this.matchSyncPending=false;this.matchSyncStartedAt=0;this.matchSyncSnapshotSeen=false;this.matchSyncTimedOut=false;this.matchSyncTimeoutWarned=false;const overlay=document.getElementById("matchSyncOverlay"),status=document.getElementById("matchSyncProgress");if(overlay){overlay.classList.add("hidden");overlay.setAttribute("aria-hidden","true");}if(status)status.textContent="";}
 NET.updateMatchSyncStatus=function(){if(!this.matchSyncPending)return;
@@ -3770,7 +4007,7 @@ NET.checkMatchSyncReady=function(snapshot){
   if(!G.player)return;
   this.finishMatchSync();
 };
-NET.tick=function(dt){if(!this.active||!this.started||G.state!=="match"||this.reconnecting||this.matchSyncPending)return;const p=G.player;if(!p)return;const gated=orientationShouldGate(),input=gated?{ax:0,climb:0,jump:false,gp:null}:traversalInput(),gp=input.gp,ghost=netLocalGhostActive(),downed=!!(this.privateState?.downed||this.snapshot?.players?.find(v=>v.id===this.id)?.downed),reviveTarget=netReviveTarget();if(!gated)queueOnlineGamepadActions(p,gp);this.sendT-=dt;if(this.sendT>0){this.renderPrediction();return;}this.sendT=NET_STEP;const jumpEdge=!!input.jump&&!this.jumpHeld,usingPad=!!(gp&&INPUT.pad),padAim=Number.isFinite(p.aimAng)?p.aimAng:(p.face<0?Math.PI:0);const ax=usingPad?Math.cos(padAim):(mouse.wx-(p.x+p.w/2)),ay=usingPad?Math.sin(padAim):(mouse.wy-(p.y+p.h/2)),am=Math.hypot(ax,ay)||1,reviveHeld=!!reviveTarget&&!downed&&!gated&&!!(keys.e||this.reviveTouchHeld||gp?.buttons?.[1]?.pressed);const pkt={type:"input",seq:this.seq+1,viewTickQ:Number.isSafeInteger(this.renderViewTickQ)?this.renderViewTickQ:undefined,left:!downed&&!gated&&input.ax<-.15,right:!downed&&!gated&&input.ax>.15,up:!downed&&!gated&&input.climb<-.15,down:!downed&&!gated&&input.climb>.15,jump:!downed&&!ghost&&!gated&&jumpEdge,aimX:ax/am,aimY:ay/am,fire:!downed&&!ghost&&!gated&&!!(mouse.down||keys.j||(gp?.buttons?.[7]?.pressed)),emote:this.actions.emote,weapon:this.actions.weapon,weaponChanged:!downed&&!ghost&&!gated&&!!this.weaponQueued,revive:reviveHeld,reviveTargetId:reviveTarget?.id};for(const k of NET_ACTIONS)pkt[k]=downed||gated?false:this.actions[k];if(reviveHeld)pkt.interact=false;if(ghost)netFinalizeGhostPacket(pkt);if(pkt.interact)pkt.interactTargetId=netInteractionTargetId(p);if(!this.send(pkt))return;this.seq=pkt.seq;this.jumpHeld=!gated&&!!input.jump;if(pkt.weaponChanged){this.weaponPendingSeq=pkt.seq;this.weaponQueued=false;}for(const k of NET_ACTIONS)this.actions[k]=false;if(pkt.emote===false||pkt.emote===null)this.actions.emote=null;const movement={left:pkt.left,right:pkt.right,up:pkt.up,down:pkt.down,jump:pkt.jump};this.pendingInputs.push({seq:pkt.seq,input:movement,packet:{...pkt}});if(this.pendingInputs.length>128)this.pendingInputs.splice(0,this.pendingInputs.length-128);if(!this.predicted||!!this.predicted.ghost!==ghost){const cls=CLASSES[p.cls]||CLASSES.jumper;this.predicted={x:p.x,y:p.y,vx:p.vx||0,vy:p.vy||0,w:p.w,h:p.h,speed:cls.speed,jump:cls.jump,onGround:!!p.onGround,climbing:!!p.climbing,gliding:!!p.gliding,face:p.face||1,ghost};}if(ghost)netPredictGhostStep(this.predicted,movement);else if(!downed&&!p.riding&&!p.car&&!p.zipping)netPredictStep(this.predicted,movement);this.renderPrediction();};
+NET.tick=function(dt){if(!this.active||!this.started||G.state!=="match"||this.reconnecting||this.matchSyncPending)return;const p=G.player;if(!p)return;const gated=orientationShouldGate(),input=gated?{ax:0,climb:0,jump:false,gp:null}:traversalInput(),gp=input.gp,ghost=netLocalGhostActive(),downed=!!(this.privateState?.downed||this.snapshot?.players?.find(v=>v.id===this.id)?.downed),reviveTarget=netReviveTarget();if(!gated)queueOnlineGamepadActions(p,gp);this.sendT-=dt;if(this.sendT>0){this.renderPrediction();return;}this.sendT=NET_STEP;const jumpEdge=!!input.jump&&!this.jumpHeld,usingPad=!!(gp&&INPUT.pad),padAim=Number.isFinite(p.aimAng)?p.aimAng:(p.face<0?Math.PI:0);const ax=usingPad?Math.cos(padAim):(mouse.wx-(p.x+p.w/2)),ay=usingPad?Math.sin(padAim):(mouse.wy-(p.y+p.h/2)),am=Math.hypot(ax,ay)||1,reviveHeld=!!reviveTarget&&!downed&&!gated&&!!(keys.e||this.reviveTouchHeld||gp?.buttons?.[1]?.pressed);const pkt={type:"input",seq:this.seq+1,viewTickQ:Number.isSafeInteger(this.renderViewTickQ)?this.renderViewTickQ:undefined,left:!downed&&!gated&&input.ax<-.15,right:!downed&&!gated&&input.ax>.15,up:!downed&&!gated&&input.climb<-.15,down:!downed&&!gated&&input.climb>.15,jump:!downed&&!ghost&&!gated&&jumpEdge,aimX:ax/am,aimY:ay/am,fire:!downed&&!ghost&&!gated&&!!(mouse.down||keys.j||(gp?.buttons?.[7]?.pressed)),emote:this.actions.emote,weapon:this.actions.weapon,weaponChanged:!downed&&!ghost&&!gated&&!!this.weaponQueued,revive:reviveHeld,reviveTargetId:reviveTarget?.id};for(const k of NET_ACTIONS)pkt[k]=downed||gated?false:this.actions[k];if(reviveHeld)pkt.interact=false;if(ghost)netFinalizeGhostPacket(pkt);if(pkt.interact)pkt.interactTargetId=netInteractionTargetId(p);if(!this.send(pkt))return;this.seq=pkt.seq;this.jumpHeld=!gated&&!!input.jump;if(pkt.weaponChanged){this.weaponPendingSeq=pkt.seq;this.weaponQueued=false;}for(const k of NET_ACTIONS)this.actions[k]=false;if(pkt.emote===false||pkt.emote===null)this.actions.emote=null;const movement={left:pkt.left,right:pkt.right,up:pkt.up,down:pkt.down,jump:pkt.jump};this.pendingInputs.push({seq:pkt.seq,input:movement,packet:{...pkt}});if(this.pendingInputs.length>128)this.pendingInputs.splice(0,this.pendingInputs.length-128);if(!this.predicted||!!this.predicted.ghost!==ghost){const cls=CLASSES[p.cls]||CLASSES.jumper;this.predicted={x:p.x,y:p.y,vx:p.vx||0,vy:p.vy||0,w:p.w,h:p.h,speed:cls.speed,jump:cls.jump,onGround:!!p.onGround,climbing:!!p.climbing,gliding:!!p.gliding,face:p.face||1,ghost};}this.predictTick=(Number(this.predictTick)||0)+1;if(ghost)netPredictGhostStep(this.predicted,movement);else if(!downed&&!p.riding&&!p.car&&!p.zipping)netPredictStep(this.predicted,movement,NET_STEP,this.predictTick);this.renderPrediction();};
 NET.requeue=function(){if(!this.active||!this.connected)return this.status("Reconnect before finding another match.",true);document.getElementById("onlineScreen").classList.remove("hidden");document.getElementById("onlineRoom").classList.add("hidden");this.status("Finding your next online match…");const identity=this.identity();identity.classId=G.chosen||identity.classId;this.send({type:"requeue",...identity,mode:this.snapshot?.mode||document.getElementById("onlineMode").value});};
 NET.renderPrediction=function(){const p=G.player,b=this.predicted;if(!p||!b)return;this.renderOffsetX*=.42;this.renderOffsetY*=.42;if(Math.abs(this.renderOffsetX)<.05)this.renderOffsetX=0;if(Math.abs(this.renderOffsetY)<.05)this.renderOffsetY=0;p.x=b.x+this.renderOffsetX;p.y=b.y+this.renderOffsetY;p.vx=b.vx;p.vy=b.vy;p.onGround=b.onGround;p.climbing=b.climbing;p.face=b.face;};
 // Online transport hardening: reconnect the reserved session automatically,
@@ -3791,7 +4028,14 @@ NET.reconcile=function(){
   this.pendingInputs=this.pendingInputs.filter(v=>v.seq>ack);
   const cls=CLASSES[p.cls]||CLASSES[s.classId]||CLASSES.jumper,oldX=p.x,oldY=p.y,topology=!!(s.downed||s.riding||s.carId||s.zipping||(s.stunT||0)>0);
   this.predicted={x:s.x,y:s.y,vx:s.vx,vy:s.vy,w:p.w,h:p.h,speed:cls.speed,jump:cls.jump,onGround:!!s.onGround,climbing:!!s.climbing,gliding:!!s.gliding,face:s.face||p.face};
-  if(!topology)for(const entry of this.pendingInputs)netPredictStep(this.predicted,entry.input);
+  // SURFACE MOTION: replay every un-acked input on the server tick it will actually be
+  // simulated on. Room.step() increments tickNo BEFORE stepping bodies, so this snapshot is the
+  // product of tick snapshot.tick and the first un-acked input lands on snapshot.tick+1. Only
+  // the oscillating wind term depends on this; a tick or two of drift there costs a few px/s of
+  // gust, where before the client predicted the gust as zero and rubber-banded through Skyport.
+  const baseTick=Number(this.snapshot.tick)||0;let replayTick=baseTick;
+  if(!topology)for(const entry of this.pendingInputs)netPredictStep(this.predicted,entry.input,NET_STEP,++replayTick);
+  this.predictTick=baseTick+this.pendingInputs.length;
   const err=Math.hypot(oldX-this.predicted.x,oldY-this.predicted.y);
   if(err>160||topology){this.renderOffsetX=this.renderOffsetY=0;}else{this.renderOffsetX=oldX-this.predicted.x;this.renderOffsetY=oldY-this.predicted.y;}
   this.renderPrediction();
@@ -3819,6 +4063,8 @@ NET.reconcile=function(){
   }
   const reload=Number(s.reloadT);
   p.reloading=Number.isFinite(reload)?Math.max(0,reload):0;
+  const swap=Number(s.swapT);   // WEAPON SWAP: authoritative seconds, mirrored for the HUD
+  p.swapping=Number.isFinite(swap)?Math.max(0,swap):0;
   if(s.inventory){
     p.heals=s.inventory.heal;
     p.medkits=0;
@@ -3944,7 +4190,12 @@ const _netAuthorityMessage=NET.message.bind(NET);NET.message=m=>{
   return result;
 };
 const _netEconomyReconcile=NET.reconcile.bind(NET);NET.reconcile=function(){_netEconomyReconcile();const s=this.snapshot?.players?.find(v=>v.id===this.id),p=G.player;if(s&&p){if(Number.isFinite(s.tokens))p.coins=Math.max(0,s.tokens);p.name=s.name||this.sessionName||p.name;p.kills=Math.max(0,Number(s.kills)||0);}};
-const _netWeaponSelectionReconcile=NET.reconcile.bind(NET);NET.reconcile=function(){const desired=this.actions.weapon,waiting=!!this.weaponQueued||(Number.isSafeInteger(this.weaponPendingSeq)&&this.lastAck<this.weaponPendingSeq);_netWeaponSelectionReconcile();if(waiting){this.actions.weapon=desired;if(G.player?.weapons?.[desired])G.player.wi=desired;}if(Number.isSafeInteger(this.weaponPendingSeq)&&this.lastAck>=this.weaponPendingSeq)this.weaponPendingSeq=null;};
+const _netWeaponSelectionReconcile=NET.reconcile.bind(NET);NET.reconcile=function(){const desired=this.actions.weapon,waiting=!!this.weaponQueued||(Number.isSafeInteger(this.weaponPendingSeq)&&this.lastAck<this.weaponPendingSeq),predictedSwap=G.player?.swapping||0;_netWeaponSelectionReconcile();if(waiting){this.actions.weapon=desired;if(G.player?.weapons?.[desired])G.player.wi=desired;if(G.player)G.player.swapping=Math.max(G.player.swapping||0,predictedSwap);}if(Number.isSafeInteger(this.weaponPendingSeq)&&this.lastAck>=this.weaponPendingSeq)this.weaponPendingSeq=null;};
+/* WEAPON SWAP (online): the entity timer loop skips the local player during a live
+   match, so the predicted raise has to be ticked down here or it would sit frozen at
+   its full duration until the next snapshot replaced it. The authoritative swapT from
+   the server overwrites this on every reconcile once the swap packet has been acked. */
+const _netSwapTick=NET.tick.bind(NET);NET.tick=function(dt){const p=G.player;if(p&&p.swapping>0)p.swapping=Math.max(0,p.swapping-dt);return _netSwapTick(dt);};
 const _netGhostReconcile=NET.reconcile.bind(NET);NET.reconcile=function(){
   const p=G.player,oldX=p?.x||0,oldY=p?.y||0;_netGhostReconcile();
   const state=this.snapshot?.players?.find(value=>value.id===this.id);if(!p||!state){return;}
@@ -4180,7 +4431,7 @@ function startWarmup(mode){
   G.safe={...WARMUP.zone};                               // bots treat the arena as the zone: nobody wanders off
   G.drop=false; G.dropT=0; G.roomA=1;
   G.spectating=false; G.paused=false; G.shake=0; dnums.length=0; feed.length=0; G.popup=null;
-  G.hitT=0; G.hitKill=false; G.hitstop=0; G.kickX=0; G.kickY=0; G.flashT=0;
+  G.hitT=0; G.hitKill=false; G.hitHead=false; G.hitstop=0; G.hitstopRender=0; G.kickX=0; G.kickY=0; G.flashT=0;
   G.camZ=1; G.camIn=0; G.camRoom=null;                   // INTERIOR ZOOM never leaks in from a prior match
   G.deathSeq=null; G.specTarget=null; G.specStats=false;
   G.careerLogged=true;                                   // belt & braces: nothing may log this "match"
@@ -4241,7 +4492,7 @@ function warmupRespawn(e){
   e.burnT=0; e.stunT=0; e.channel=null; e.chargeCast=null; e.grapple=null; e.zipping=null; e.tubing=null; e.car=null;
   e.ledge=null; e.ledgeCd=0; e.wallJumps=0; e.wallJumpLock=0; e.wallSlide=false; e.ledgePoseT=0;
   e.gliding=false; e.chuteOpen=false; e.riding=false; e.climbing=false; e.bull=null; e.skyUsed=false;
-  e.vx=0; e.vy=0; e.iframes=0.6; e.spawnShield=1.2; e.reloading=0; e.burst=null;
+  e.vx=0; e.vy=0; e.iframes=0.6; e.spawnShield=1.2; e.reloading=0; e.swapping=0; e.burst=null;
   if(!e.weapons.some(id=>{const w2=WEAPONS[id]; return w2&&!w2.melee&&!w2.hook;})) giveWeapon(e,"pistol");
   e.armed=true; e.landed=true;
   warmupPlace(e);
@@ -4379,7 +4630,7 @@ if(typeof location!=="undefined"&&(location.hostname==="127.0.0.1"||location.hos
       return {before,active,after:{x:e.x,y:e.y,w:e.w,h:e.h,hp:e.hp,active:!!e.pu},expectedDamage:7};
     },
     renderPaneState(id){const pane=BUILDING_PANES.get(id),building=BUILDINGS.find(value=>value.windows.includes(pane)||value.roofWin===pane);if(!pane||!building)return null;let shardMoves=0;const moveTo=ctx.moveTo;ctx.moveTo=function(x,y){if(x===pane.x&&y===pane.y+6)shardMoves++;return moveTo.call(this,x,y);};try{drawBuildingFacade(building);}finally{ctx.moveTo=moveTo;}return {state:pane.state,shardMoves};},
-    predictSequence(body,inputs,dynamic={}){const prior=NET.snapshot,b={...body};NET.snapshot={builds:dynamic.builds||[],elevators:dynamic.elevators||[]};const frames=[];try{for(const input of inputs){netPredictStep(b,input);frames.push({x:b.x,y:b.y,vx:b.vx,vy:b.vy,onGround:!!b.onGround,climbing:!!b.climbing,face:b.face,wallDir:b.wallDir||0,blockedX:!!b.blockedX,wallJumps:b.wallJumps||0,wallJumpLock:b.wallJumpLock||0});}}finally{NET.snapshot=prior;}return frames;},
+    predictSequence(body,inputs,dynamic={},startTick=0){const prior=NET.snapshot,b={...body};NET.snapshot={builds:dynamic.builds||[],elevators:dynamic.elevators||[]};const frames=[];let tick=startTick;try{for(const input of inputs){const motion=netSurfaceMotion(b,tick);netPredictStep(b,input,NET_STEP,tick++);frames.push({x:b.x,y:b.y,vx:b.vx,vy:b.vy,onGround:!!b.onGround,climbing:!!b.climbing,face:b.face,wallDir:b.wallDir||0,blockedX:!!b.blockedX,wallJumps:b.wallJumps||0,wallJumpLock:b.wallJumpLock||0,iceControl60:motion.iceControl60??null,windAcceleration:Number.isFinite(motion.windAcceleration)?motion.windAcceleration:null,speedMultiplier:motion.speedMultiplier});}}finally{NET.snapshot=prior;}return frames;},
     interpolateFrame:(a,b,alpha)=>netInterpolateFrame(a,b,clamp(alpha,0,1)),
     stormState(){return {safe:{...G.safe},target:G.targetSafe?{...G.targetSafe}:null,state:G.stormState,phase:G.stormPhase,damage:G.stormDmg,nextStorm:G.nextStorm,shrinking:!!G.shrinkAnim};},
     crusherState(){return {snapshot:NET.snapshot?.crusher?{...NET.snapshot.crusher}:null,local:G.crusher?{cyc:G.crusher.cyc,slamSeq:G.crusher.slamSeq,telegraph:!!G.crusher.telegraph,mag:G.crusher.mag,magnetSeq:G.crusher.magnetSeq,magnetTelegraph:!!G.crusher.armed}:null};},
@@ -5025,7 +5276,7 @@ function makeEntity(kind, cls, x, y, name){
     coyoteT:0, jumpBufT:0, jumpHeld:false,
     riding:false, gliding:false, chuteOpen:false, landed:true, armed:false, seat:0, dropX:0, car:null, carSeat:0, carExitLock:0,
     pu:null, sizeMul:1, spdMul:1, burnT:0, burnFrom:null, tubing:null, ramCd:0,
-    weapons:[], wi:0, ammo:0, ammoByWeapon:{}, reserveByWeapon:{}, reloading:0, cd:0,
+    weapons:[], wi:0, ammo:0, ammoByWeapon:{}, reserveByWeapon:{}, reloading:0, swapping:0, cd:0,
     heals: c.startHeal||0, shields:0, medkits:0, nades:0, bigshields:0, traps:0, padkits:0, stickies:0, impulses:0, nanos:0, forcefields:0, nadeSel:0, regenT:0, stunT:0, channel:null, grapple:null,
     abilityCd:0, iframes:0, useCd:0,
     // ai
@@ -5182,7 +5433,7 @@ function addWeaponReserve(e,wid,magazines){
   return add;
 }
 function tryReload(e,wpn){
-  if(!e||!wpn||!wpn.reload||wpn.melee||e.reloading>0) return false;
+  if(!e||!wpn||!wpn.reload||wpn.melee||e.reloading>0||e.swapping>0) return false;
   if(weaponReserve(e,wpn.id)<=0) return false;
   e.reloading=wpn.reload;
   if(e.kind==="player") playSfx("reload",{vol:0.6});
@@ -5200,7 +5451,17 @@ function finishReload(e,wpn){
 function saveWeaponAmmo(e){ const id=e.weapons&&e.weapons[e.wi]; if(id){ e.ammoByWeapon=e.ammoByWeapon||{}; e.ammoByWeapon[id]=Math.max(0,e.ammo||0); } }
 function switchWeapon(e,wi){
   if(!e.weapons||e.weapons[wi]===undefined) return false;
+  /* WEAPON SWAP: the SELECTION is instant (slot, sprite and HUD change now) but the
+     weapon has to be raised before it can fire — authoritative in room.js, mirrored
+     here so offline plays the same and so the online HUD predicts instead of waiting.
+     Cancel rules, identical to the server: a swap cancels an in-flight reload outright
+     (no ammo granted), a reload cannot start during a raise, firing is blocked for the
+     whole raise and is not queued, and the only thing that ends a raise early is another
+     swap — which supersedes it and re-arms at the new weapon's duration. Re-selecting
+     the weapon already in hand is free. */
+  const raise = wi!==e.wi;
   saveWeaponAmmo(e); e.wi=wi; e.burst=null; e.reloading=0;
+  if(raise) e.swapping=weaponSwapTime(e.weapons[wi]);
   if(NET.active&&!G.warmup&&e===G.player){NET.actions.weapon=wi;NET.weaponQueued=true;}
   const w=curWeapon(e); e.ammo=w.melee?0:(e.ammoByWeapon[e.weapons[wi]]??w.mag);
   return true;
@@ -5452,7 +5713,7 @@ function startMatch(){
   G.spectating=false; G.paused=false; G.shake=0; dnums.length=0; feed.length=0; G.popup=null;
   resetTraversalCourses();
   resetContracts();
-  G.rings=[]; G.slashes=[]; G.decoys=[]; G.wells=[]; G.hitT=0; G.hitKill=false; G.hitstop=0; G.kickX=0; G.kickY=0;
+  G.rings=[]; G.slashes=[]; G.decoys=[]; G.wells=[]; G.hitT=0; G.hitKill=false; G.hitHead=false; G.hitstop=0; G.hitstopRender=0; G.kickX=0; G.kickY=0;
   if(!COVER_SPOTS) COVER_SPOTS=buildCoverSpots();
   G.covers=NET.active?[]:COVER_SPOTS.map(s=>({x:s.x,y:s.y,w:s.w,h:s.h,type:s.type,hp:80,maxhp:80,flash:0}));
   G.airdrops=[]; G.airdropT=50; G.explos=[]; G.craters=[]; G.ragdolls=[]; G.tombstones=[];
@@ -5898,6 +6159,7 @@ function collide(e, dt){
 /* ---------------- Combat ---------------- */
 function fire(e, aimX, aimY){
   if(isDriving(e)) return;   // CAR OCCUPANCY: hands on the wheel — the driver cannot shoot or melee
+  if(e.swapping>0) return;   // WEAPON SWAP: still raising — mirrors the room.js fire gate
   const wpn=curWeapon(e); if(!wpn) return;
   // landing shield: holds until the FIRST hit taken (or the 20s cap) \u2014 see applyDamage \u2014
   // but attacking forfeits it immediately (matches server authority rule; no shielded aggression)
@@ -6013,7 +6275,9 @@ function fireShot(e, wpn, baseAng){
           else { hitWall=true; spawnParts(hit.x,hit.y,"#cfd8ff",4); bx=hit.x; by=hit.y; } } }
       if(hitWall) break;
       for(const t of G.ents){ if(!t.alive||t===e||hitSet.has(t)) continue;
-        if(bx>t.x&&bx<t.x+t.w&&by>t.y&&by<t.y+t.h){ hitSet.add(t); applyDamage(t,wpn.dmg,e,{kind:"weapon",id:wpn.id});
+        if(bx>t.x&&bx<t.x+t.w&&by>t.y&&by<t.y+t.h){ hitSet.add(t);
+          const shot=shotDamageAt(wpn.id,wpn.dmg,t,bx,by,cx,cy);
+          applyDamage(t,shot.dmg,e,{kind:"weapon",id:wpn.id,headshot:shot.head});
           if(e.pu&&e.pu.id==="inferno"){ t.burnT=3; t.burnFrom=e; } spawnParts(bx,by,sk.c,5); } }
     }
     G.beams.push({ x1:cx+Math.cos(a)*24, y1:cy+Math.sin(a)*24, x2:bx, y2:by, t:0.09, c:sk.c, glow:sk.glow });
@@ -6026,6 +6290,7 @@ function fireShot(e, wpn, baseAng){
     a += rand(-wpn.spread, wpn.spread)*acc*(1+(e.heat||0)*2.2);
     const pr={
       x:cx+Math.cos(a)*22, y:cy+Math.sin(a)*22,
+      ox:cx, oy:cy,   // muzzle: range falloff is measured over the whole flight, not per step
       vx:Math.cos(a)*spd, vy:Math.sin(a)*spd,
       dmg:wpn.dmg, owner:e, source:{kind:"weapon",id:wpn.id},
       color:(e.pu&&e.pu.id==="inferno")?"#ff7a1a":sk.c,
@@ -6158,7 +6423,8 @@ function stepProjectiles(dt){
       for(const e of G.ents){
         if(!e.alive || e===pr.owner) continue;
         if(pr.x>e.x&&pr.x<e.x+e.w&&pr.y>e.y&&pr.y<e.y+e.h){
-          applyDamage(e,pr.dmg,pr.owner,pr.source||null);
+          const shot=shotDamageAt(pr.source&&pr.source.id,pr.dmg,e,pr.x,pr.y,pr.ox,pr.oy);
+          applyDamage(e,shot.dmg,pr.owner,pr.source?{...pr.source,headshot:shot.head}:null);
           if(pr.burn){ e.burnT=3; e.burnFrom=pr.owner; }
           if(pr.aoe) explode(pr.x,pr.y,pr.aoe,pr.dmg*0.6,pr.owner);
           spawnParts(pr.x,pr.y,pr.color,6);
@@ -6254,10 +6520,21 @@ function applyDamage(e,dmg,from,source=null){
   if(megaHit&&beforeDamage-((e.shield||0)+e.hp)>0) removePowerup(e,true);
   if(e===G.player && dmg>0) dirEvent(clamp(0.10+dmg*0.005,0.10,0.30));   // director: damage taken, scaled
   if(from===G.player && dmg>=1 && e!==G.player){
-    G.hitT=Math.max(G.hitT||0, 0.14); G.hitKill=false;
+    const headshot=!!(source&&source.headshot);
+    G.hitT=Math.max(G.hitT||0, headshot?0.2:0.14); G.hitKill=false; G.hitHead=headshot;
+    if(headshot) SFX.headshot();
+    /* HITSTOP (presentation): micro freeze-frame on every landed hit — kill confirm keeps its
+       bigger 0.045 below. Math.max() only, so sustained fire never accumulates a long freeze.
+       G.hitstop early-returns out of update(), i.e. it halts the LOCAL simulation, so it is
+       armed only while combat is client-simulated (offline / warm-up). During a live online
+       match `from===G.player` cannot happen anyway (combat is server-owned), but the guard is
+       explicit so this can never stall a predicted frame. */
+    if((!NET.active||G.warmup) && !PREFS.get("reducedMotion"))
+      G.hitstop=Math.max(G.hitstop||0, Math.min(0.020, 0.004+dmg*0.0004));   // pistol ~8ms · rocket/sniper ~20ms
     dnums.push({ x:e.x+e.w/2+rand(-8,8), y:e.y-8, vy:-70, t:0.8, txt:Math.round(dmg),
-      c: dmg>=30? "#ffe066" : dmg>=15? "#5debff" : "#ffffff", big:dmg>=30 });
+      c: headshot? "#ff9f1a" : dmg>=30? "#ffe066" : dmg>=15? "#5debff" : "#ffffff", big: headshot||dmg>=30 });
     if(dnums.length>40) dnums.shift();
+    rumble("hit");
   }
   if(e===G.player && dmg>=1 && G.shakeOn) G.shake=Math.min(10, G.shake+Math.min(6, dmg*0.5));
   if(dmg>=1 && (e.kind==="player"||from===G.player)) SFX.hit();
@@ -6276,7 +6553,8 @@ function eliminate(e, from){
     dirEvent(0.20);   // director: player kill
     const src=e.lastDamageSource; if(src?.kind==="weapon"&&src.id) MATCH_METRICS.weapon(src.id).kills++;
     contractProgress("elims");
-    G.hitstop=0.045; G.hitT=0.3; G.hitKill=true;
+    G.hitstop=0.045; G.hitT=0.3; G.hitKill=true; G.hitHead=false;
+    rumble("kill");
     playSfx("kill_confirm",{vol:0.7});
     try{ wowKill(e); }catch(err){}
     if(G.rings) G.rings.push({ x:e.x+e.w/2, y:e.y+e.h/2, r:6, t:0.5, c:"#ffe066" });
@@ -6666,7 +6944,8 @@ function pickupLoot(e){
     const l=G.loot[i];
     if(aabb(e,{x:l.x,y:l.y,w:l.w,h:l.h})){
       if(l.kind==="powerup"){ applyPowerup(e, l.id); }
-      else if(l.kind==="weapon"){ giveWeapon(e,l.id); if(e.kind==="player"){ const wm=MATCH_METRICS.weapon(l.id); wm.pickups++; if(!MATCH_METRICS.firstGun) MATCH_METRICS.firstGun={id:l.id,t:G.elapsed}; toast(l.name+" — "+(ITEM_INFO[l.id]?ITEM_INFO[l.id].d:"")); pickupSfx(l.rarity); } }
+      else if(l.kind==="weapon"){ giveWeapon(e,l.id); e.swapping=weaponSwapTime(l.id);   // a pickup auto-equips, and an auto-equip is a raise (room.js giveLoot does the same)
+        if(e.kind==="player"){ const wm=MATCH_METRICS.weapon(l.id); wm.pickups++; if(!MATCH_METRICS.firstGun) MATCH_METRICS.firstGun={id:l.id,t:G.elapsed}; toast(l.name+" — "+(ITEM_INFO[l.id]?ITEM_INFO[l.id].d:"")); pickupSfx(l.rarity); } }
       else if(l.kind==="ammo"){
         addWeaponReserve(e,l.weapon,l.magazines);
         if(e.kind==="player"){
@@ -6788,7 +7067,7 @@ function zipStep(e, dt){
 // ZIP COMBAT (bots): riders may return fire at a line-of-sight target with normal persona aim
 function zipBotFire(b){
   const ai=b.ai, t=ai&&ai.target;
-  if(!t || !t.alive || b.cd>0 || b.reloading>0 || b.ammo<=0) return;
+  if(!t || !t.alive || b.cd>0 || b.reloading>0 || b.swapping>0 || b.ammo<=0) return;
   const fw=curWeapon(b);
   if(!fw || fw.melee || fw.hook) return;
   const cx=b.x+b.w/2, cy=b.y+b.h/2, tx=t.x+t.w/2, ty=t.y+t.h/2;
@@ -6825,15 +7104,24 @@ function stepCombatTimers(e,dt){
       } else e.burst=null;
     }
   }
+  if(e.swapping>0) e.swapping=Math.max(0,e.swapping-dt);
   if(e.reloading>0){ e.reloading-=dt; if(e.reloading<=0){ const w=curWeapon(e); if(w){ finishReload(e,w); } } }
   if(e._dryT>0) e._dryT-=dt;
 }
 
 const EMOTES=["GG!","♥","!!","☺","♛"];
 /* ---------------- Particles ---------------- */
+const PARTS_CAP=600;   // global particle budget — same number the direct G.parts.push call sites guard against
 function spawnParts(x,y,color,n){
-  if(G.parts.length>600) return;   // particle budget cap (raised for explosion juice, still pooled)
-  for(let i=0;i<n;i++){
+  // Global cap. The old guard (`if(G.parts.length>600) return;`) only refused a burst that
+  // STARTED over budget, so one call could still overshoot by its whole burst (a 26-particle
+  // death burst at 600 landed on 626). Clamping the burst to the remaining room makes 600 a
+  // hard ceiling. Refuses the surplus rather than evicting the oldest, which is what every
+  // direct `... && G.parts.length<600` push site in this file already does.
+  const room=PARTS_CAP-G.parts.length;
+  if(room<=0) return;
+  const count=Math.min(n, room);
+  for(let i=0;i<count;i++){
     G.parts.push({ x,y, vx:rand(-160,160), vy:rand(-220,60), life:rand(0.3,0.7), color, r:rand(1.5,3.5) });
   }
 }
@@ -7129,6 +7417,32 @@ function getPad(){
     for(const g of pads){ if(g && g.buttons && g.buttons.length>=10) return g; } // DS4/DS5 often land at index 1+
   }catch(e){}
   return null;
+}
+/* ---------------- Controller haptics ----------------
+   Presentation-only: never reads or writes simulation state. Feature-detected per call
+   (vibrationActuator / playEffect are not universally supported — Safari and most Firefox
+   builds have neither), fails silently, and only fires while a pad is the LIVE input family
+   so keyboard/touch players never wake a background controller. Each effect is rate-limited
+   independently so sustained automatic fire cannot spam the actuator. */
+const RUMBLE_FX={
+  hit:  { dur: 45, strong:0.00, weak:0.30, gap: 70 },   // landed a hit: weak + short
+  kill: { dur:140, strong:0.55, weak:0.45, gap:120 },   // kill confirm: stronger
+  hurt: { dur: 90, strong:0.32, weak:0.28, gap:110 },   // took damage: medium
+};
+const RUMBLE_LAST={ hit:0, kill:0, hurt:0 };
+function rumble(kind){
+  try{
+    const fx=RUMBLE_FX[kind]; if(!fx) return;
+    if(!PREFS.get("rumble")) return;
+    if(activeInputFamily()!=="pad") return;
+    const now=performance.now();
+    if(now-(RUMBLE_LAST[kind]||0) < fx.gap) return;
+    const act=getPad()?.vibrationActuator;
+    if(!act || typeof act.playEffect!=="function") return;
+    RUMBLE_LAST[kind]=now;
+    const r=act.playEffect("dual-rumble",{ startDelay:0, duration:fx.dur, strongMagnitude:fx.strong, weakMagnitude:fx.weak });
+    if(r && typeof r.catch==="function") r.catch(()=>{});   // rejects on unsupported effect types
+  }catch(e){}
 }
 function stickDeadzone(){ return PREFS.get("deadzone")==="tight" ? .14 : PREFS.get("deadzone")==="relaxed" ? .3 : .22; }
 function aimCurve(v){ const p=PREFS.get("aim")==="low" ? 1.35 : PREFS.get("aim")==="high" ? .78 : 1; return Math.sign(v)*Math.pow(Math.abs(v),p); }
@@ -7627,7 +7941,7 @@ function botVendorNeed(b,V){
   if(V.item==="powerup") return 2;
   return 0;
 }
-function botThink(b, dt){
+function botThink(b, dt, frameAlive){
   if(b.stunT>0){ b.vx=0; return; }
   if(b.chargeCast || b.bull) return;
   if(b.channel){ b.vx=0; return; }   // drinking big shield: stand still or it cancels
@@ -7637,9 +7951,12 @@ function botThink(b, dt){
   const per={...basePer,aim:basePer.aim*diff.aim,aimMin:basePer.aimMin*diff.aim};
   const late=G.stormPhase>=5;              // final phases: everyone tightens up
   ai.decide-=dt;
-  const enemies=G.ents.filter(e=>e.alive && e!==b);
+  // Hoisted per-frame alive list (see update()); self and any mid-frame death are re-tested
+  // at use time, so this stays bit-for-bit identical to the old per-bot G.ents.filter().
+  const enemies=frameAlive||G.ents;
   let nearest=null, nd=1e9;
-  for(const e of enemies){ const d=dist(b.x,b.y,e.x,e.y); if(d<nd){ nd=d; nearest=e; } }
+  for(const e of enemies){ if(e===b||!e.alive) continue;
+    const d=dist(b.x,b.y,e.x,e.y); if(d<nd){ nd=d; nearest=e; } }
 
   // retreat from storm always (final phases: hug the zone tighter)
   const outside = !inSafe(b.x+b.w/2,b.y+b.h/2);
@@ -7670,7 +7987,8 @@ function botThink(b, dt){
     // slayers stalk the kill leader once the mid-game starts
     if(ai.persona==="slayer" && G.stormPhase>=3){
       let kl=null,kk=1;
-      for(const e2 of enemies){ if(e2.kills>kk && dist(bcx,bcy,e2.x,e2.y)<900){ kk=e2.kills; kl=e2; } }
+      for(const e2 of enemies){ if(e2===b||!e2.alive) continue;
+        if(e2.kills>kk && dist(bcx,bcy,e2.x,e2.y)<900){ kk=e2.kills; kl=e2; } }
       ai.hunt=kl;
     }
   }
@@ -8034,6 +8352,21 @@ function update(dt){
   }
   if(G.paused) return;
   if(G.hitstop>0){ G.hitstop-=dt; return; }   // brief freeze frame on kill confirm
+  /* RENDER-ONLY HIT-STOP (online). The freeze above is a genuine simulation halt: it
+     returns before NET.reconcile(), the camera, wowStep() and every presentation timer.
+     Offline that is exactly right. Online it is a prediction hazard to leave unexamined,
+     so the online path never sets G.hitstop — it sets G.hitstopRender and we damp dt for
+     the REMAINDER of update() instead. That is safe by construction:
+       · NET.tick(dt) — input sampling, packet send and netPredictStep — already ran above
+         at full dt, so the 20 Hz prediction clock and the wire are untouched.
+       · NET.reconcile() takes no dt (it lerps by a fixed .22), so server corrections still
+         apply in full on every frame of the freeze — nothing is deferred or accumulated.
+       · Everything else below this line is local presentation online: G.elapsed, the audio
+         director, stepParts(), wowStep() and the camera lerp. The entity physics/timer loop
+         skips the local player online (`if(NET.active&&!G.warmup&&e===G.player) continue;`)
+         and G.ents holds nobody else, so no cooldown or cooldown-UI clock is slowed either.
+     Net effect: the picture hitches, the simulation does not. */
+  if(G.hitstopRender>0){ G.hitstopRender=Math.max(0,G.hitstopRender-dt); dt*=0.12; }
   G.elapsed+=dt;
   if(G.warmup) stepWarmup(dt);          // warm-up skirmish: respawn queue + arena containment
   stepDirector(dt);
@@ -8257,13 +8590,20 @@ function update(dt){
     }
   }
   // bots
+  /* PERF: one alive-entity list per frame, shared by every botThink() below. It used to be
+     `G.ents.filter(...)` INSIDE botThink — one array allocation per bot per frame (up to 49).
+     Semantics are unchanged: botThink re-tests e.alive at use time, so a bot killed by an
+     earlier bot's shot this same frame is still skipped exactly as before, and G.ents
+     membership never changes mid-frame (only match setup pushes into it; the only revive
+     path, warmupRespawn, runs earlier in update() via stepWarmup). */
+  const frameAlive=G.ents.filter(e=>e.alive);
   for(const e of G.ents){
     if(!e.alive) continue;
     if(e.zipping){
       if(e.kind==="bot"){ zipStep(e, dt); if(e.zipping) zipBotFire(e); }
       continue;
     }
-    if(e.kind==="bot" && !G.drop && !e.gliding && !e.riding && !e.tubing) botThink(e,dt);
+    if(e.kind==="bot" && !G.drop && !e.gliding && !e.riding && !e.tubing) botThink(e,dt,frameAlive);
     if(e.kind==="bot" && e.alive){
       if(e.ai && e.ai.target && e.ai.target.alive){
         const tgt=e.ai.target;
@@ -10573,7 +10913,12 @@ function drawEntity(e){
     if(e.shield>0){ ctx.fillStyle="#00d9ff"; ctx.fillRect(bx,by-3,bw*clamp(e.shield/e.maxshield,0,1),2.5); }
   } else {
     ctx.fillStyle="#00d9ff"; ctx.beginPath(); ctx.moveTo(cx,y-16); ctx.lineTo(cx-6,y-24); ctx.lineTo(cx+6,y-24); ctx.closePath(); ctx.fill();
-    if(e.reloading>0){ const rw=curWeapon(e);
+    if(e.swapping>0){ const st=weaponSwapTime(e.weapons&&e.weapons[e.wi]);
+      if(st>0){ const k2=clamp(1-(e.swapping/st),0,1);   // WEAPON SWAP: blue bar, same slot as the amber reload bar
+        ctx.fillStyle="rgba(0,0,0,.6)"; ctx.fillRect(cx-20, y-34, 40, 5);
+        ctx.fillStyle="#8ab4ff"; ctx.fillRect(cx-20, y-34, 40*k2, 5);
+        ctx.strokeStyle="rgba(138,180,255,.8)"; ctx.lineWidth=1; ctx.strokeRect(cx-20.5, y-34.5, 41, 6); } }
+    else if(e.reloading>0){ const rw=curWeapon(e);
       if(rw && rw.reload>0){ const k2=clamp(1-(e.reloading/rw.reload),0,1);
         ctx.fillStyle="rgba(0,0,0,.6)"; ctx.fillRect(cx-20, y-34, 40, 5);
         ctx.fillStyle="#ffb000"; ctx.fillRect(cx-20, y-34, 40*k2, 5);
@@ -10948,16 +11293,25 @@ function drawHUD(){
   }
   drawInputCard(p);   /* INPUTCARD: kb/pad live-input reference replaces the touch-control space */
 
-  // hit marker at the crosshair
+  // hit marker at the crosshair — kill (gold, biggest) > headshot (orange + ring) > plain
   if(G.hitT>0 && p.alive && !INPUT.pad){
-    const hx=(mouse.x-offX)/scale, hy=(mouse.y-offY)/scale;
+    const hx=(mouse.x-offX)/scale, hy=(mouse.y-offY)/scale, head=!!G.hitHead && !G.hitKill;
     ctx.save(); ctx.globalAlpha=clamp(G.hitT*7,0,1);
-    ctx.strokeStyle=G.hitKill? "#ffe066":"#ffffff"; ctx.lineWidth=G.hitKill?3:2;
-    const hs=G.hitKill? 11:7, hg=3;
+    ctx.strokeStyle=G.hitKill? "#ffe066": head? "#ff9f1a":"#ffffff"; ctx.lineWidth=G.hitKill?3: head?3:2;
+    const hs=G.hitKill? 11: head?10:7, hg=3;
     ctx.beginPath();
     ctx.moveTo(hx-hs,hy-hs); ctx.lineTo(hx-hg,hy-hg); ctx.moveTo(hx+hs,hy-hs); ctx.lineTo(hx+hg,hy-hg);
     ctx.moveTo(hx-hs,hy+hs); ctx.lineTo(hx-hg,hy+hg); ctx.moveTo(hx+hs,hy+hs); ctx.lineTo(hx+hg,hy+hg);
-    ctx.stroke(); ctx.restore();
+    ctx.stroke();
+    /* HEADSHOT TELL: the four ticks alone read as "a slightly bigger hit", so the
+       headshot marker adds a ring and two vertical caps nothing else draws. */
+    if(head){
+      ctx.beginPath(); ctx.arc(hx,hy,hs+3,0,6.28); ctx.lineWidth=1.6; ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(hx,hy-hs-6); ctx.lineTo(hx,hy-hg-2); ctx.moveTo(hx,hy+hs+6); ctx.lineTo(hx,hy+hg+2);
+      ctx.lineWidth=2.4; ctx.stroke();
+    }
+    ctx.restore();
   }
   // interact prompt
   const worldPromptCount=drawWorldInteractionIcons(p);
@@ -11080,7 +11434,8 @@ function drawInventory(p){
   if(wpn){
     ctx.textAlign="center"; ctx.font="bold 16px 'Rajdhani'";
     const ax=VIEW_W/2, ay=y-10;
-    if(wpn.melee){ ctx.fillStyle="#eaf2ff"; ctx.fillText("∞", ax, ay); }
+    if(p.swapping>0){ ctx.fillStyle="#8ab4ff"; ctx.fillText("RAISING…", ax, ay); }
+    else if(wpn.melee){ ctx.fillStyle="#eaf2ff"; ctx.fillText("∞", ax, ay); }
     else if(p.reloading>0){ ctx.fillStyle="#ffb000"; ctx.fillText("RELOADING…", ax, ay); }
     else { ctx.fillStyle="#eaf2ff"; ctx.fillText(p.ammo+" / "+wpn.mag+"  +"+weaponReserve(p,wpn.id), ax, ay); }
   }
@@ -11457,7 +11812,8 @@ function toast(msg){ toastEl.textContent=msg; toastEl.classList.add("show"); toa
    Client-side visuals only: no simulation, netcode, loot, or authority changes.
    Respects G.shakeOn / G.reducedFlash / reducedMotion preferences.            */
 const WOW={ banners:[], streak:{n:0,t:0}, lastMile:null, showdown:false, showdownT:0,
-  chuteWas:false, wind:[], heartT:0 };
+  chuteWas:false, wind:[], heartT:0,
+  hurtT:0, hurtPrev:null, hurtCd:0 };   // HURTPULSE: damage-taken vignette timer / hp+shield watcher / retrigger cooldown
 function wowBanner(txt,sub,c,dur){ WOW.banners.push({txt,sub:sub||"",c:c||"#ffd166",t:dur||2.2,d:dur||2.2}); if(WOW.banners.length>3) WOW.banners.shift(); }
 function wowAliveCount(){
   if(NET.active) return NET.snapshot?.players? NET.snapshot.players.filter(v=>v.alive).length : null;
@@ -11504,6 +11860,28 @@ function wowStep(dt){
   }
   WOW.chuteWas=chute;
   WOW.heartT+=dt;
+  /* HURTPULSE: brief red vignette whenever the LOCAL player takes damage, at ANY health —
+     the low-HP heartbeat below only starts at 25%. Watching the authoritative hp+shield total
+     (instead of hooking applyDamage) makes this work identically offline and online, where the
+     local player's health is server-owned. A >1 total drop ignores per-frame storm/burn ticks,
+     and hurtCd stops rapid fire from smearing into a solid red screen. */
+  if(WOW.hurtT>0) WOW.hurtT=Math.max(0, WOW.hurtT-dt);
+  {
+    const lp=G.player, live=!!(lp && lp.alive && G.state==="match");
+    const total=live? (Number(lp.hp)||0)+(Number(lp.shield)||0) : null;
+    if(WOW.hurtCd>0) WOW.hurtCd-=dt;
+    if(live && WOW.hurtPrev!==null && total < WOW.hurtPrev-1 && WOW.hurtCd<=0){
+      WOW.hurtCd=0.16;
+      if(!G.reducedFlash) WOW.hurtT=0.07;   // vignette follows the reduced-flash toggle; haptics do not
+      /* Offline the camera shake for damage taken lives in applyDamage() (`e===G.player`),
+         which never runs online — so online only, add the same shake here off the same
+         authoritative hp+shield drop. Gated to online so offline can never double up. */
+      if(NET.active&&!G.warmup&&G.shakeOn&&!PREFS.get("reducedMotion"))
+        G.shake=Math.min(10,(G.shake||0)+Math.min(6,(WOW.hurtPrev-total)*0.5));
+      rumble("hurt");
+    }
+    WOW.hurtPrev=total;
+  }
 }
 function drawWowBanners(){
   let y=136;
@@ -11527,6 +11905,14 @@ function drawWowOverlays(p){
     const eg=ctx.createRadialGradient(VIEW_W/2,VIEW_H/2,VIEW_H*0.42, VIEW_W/2,VIEW_H/2,VIEW_H*0.78);
     eg.addColorStop(0,"rgba(255,176,0,0)"); eg.addColorStop(1,"rgba(255,176,0,1)");
     ctx.fillStyle=eg; ctx.fillRect(0,0,VIEW_W,VIEW_H); ctx.restore();
+  }
+  /* HURTPULSE: 70ms low-intensity red vignette on any damage taken. Deliberately far
+     subtler than the close-explosion flash (0.45 alpha) — peaks at 0.16. */
+  if(WOW.hurtT>0 && !G.reducedFlash){
+    ctx.save(); ctx.globalAlpha=clamp(WOW.hurtT/0.07,0,1)*0.16;
+    const dg=ctx.createRadialGradient(VIEW_W/2,VIEW_H/2,VIEW_H*0.30, VIEW_W/2,VIEW_H/2,VIEW_H*0.78);
+    dg.addColorStop(0,"rgba(255,30,50,0)"); dg.addColorStop(1,"rgba(255,30,50,1)");
+    ctx.fillStyle=dg; ctx.fillRect(0,0,VIEW_W,VIEW_H); ctx.restore();
   }
   // low-HP heartbeat vignette
   if(p && p.alive && G.state==="match" && p.maxhp && p.hp/p.maxhp<=0.25){
@@ -11600,7 +11986,7 @@ function drawConfetti(){
 /* ---------------- Class cards UI ---------------- */
 let MENU_SEL=0;
 function menuButtons(state){
-  if(state==="title") return ["onlineBtn","playBtn","practiceBtn","difficultyBtn","sfxBtn","musicBtn","shakeBtn","flashBtn","aimBtn","deadzoneBtn","contrastBtn","uiScaleBtn","motionBtn","directorBtn","controlsBtnTitle","aboutBtnTitle","fsBtn"].map(id=>document.getElementById(id)).filter(Boolean);
+  if(state==="title") return ["onlineBtn","playBtn","practiceBtn","difficultyBtn","sfxBtn","musicBtn","shakeBtn","flashBtn","aimBtn","deadzoneBtn","contrastBtn","uiScaleBtn","motionBtn","rumbleBtn","directorBtn","controlsBtnTitle","aboutBtnTitle","fsBtn"].map(id=>document.getElementById(id)).filter(Boolean);
   const root=document.getElementById(state==="victory"?"victoryScreen":"defeatScreen");
   return root?Array.from(root.querySelectorAll(".endActions button")):[];
 }
@@ -11790,6 +12176,8 @@ function refreshPreferenceButtons(){
   if(ct) ct.textContent="CONTRAST: "+(PREFS.get("contrast")?"HIGH":"STANDARD");
   if(ui) ui.textContent="UI: "+(PREFS.get("uiLarge")?"LARGE":"STANDARD");
   if(mo) mo.textContent="MOTION: "+(PREFS.get("reducedMotion")?"REDUCED":"FULL");
+  const ru=document.getElementById("rumbleBtn");
+  if(ru) ru.textContent="RUMBLE: "+(PREFS.get("rumble")?"ON":"OFF");
   const di=document.getElementById("directorBtn");
   if(di) di.textContent="AI DIRECTOR: "+(PREFS.get("director")?"ON":"OFF");
   document.body.classList.toggle("highContrast",PREFS.get("contrast"));
@@ -11836,6 +12224,7 @@ document.getElementById("aimBtn").onclick=()=>{ const o=["low","normal","high"],
 document.getElementById("deadzoneBtn").onclick=()=>{ const o=["tight","standard","relaxed"],v=PREFS.get("deadzone"); PREFS.set("deadzone",o[(o.indexOf(v)+1)%o.length]); refreshPreferenceButtons(); };
 document.getElementById("contrastBtn").onclick=()=>{ PREFS.set("contrast",!PREFS.get("contrast")); refreshPreferenceButtons(); };
 document.getElementById("uiScaleBtn").onclick=()=>{ PREFS.set("uiLarge",!PREFS.get("uiLarge")); refreshPreferenceButtons(); };
+document.getElementById("rumbleBtn").onclick=()=>{ PREFS.set("rumble",!PREFS.get("rumble")); if(PREFS.get("rumble")) rumble("kill"); refreshPreferenceButtons(); };
 document.getElementById("motionBtn").onclick=()=>{ const on=PREFS.set("reducedMotion",!PREFS.get("reducedMotion")); if(on){ G.shakeOn=false; G.reducedFlash=true; } else { G.shakeOn=PREFS.get("shake"); G.reducedFlash=PREFS.get("reducedFlash"); } refreshPreferenceButtons(); };
 document.getElementById("difficultyBtn").onclick=()=>{
   const order=["casual","riot","mayhem"], next=order[(order.indexOf(PREFS.get("difficulty"))+1)%order.length];
