@@ -363,7 +363,7 @@
     <button id="fsBtn" class="sbtn">⛶ FULLSCREEN</button>
   </div>
   <div id="career">CAREER · NO MATCHES YET</div>
-  <div class="buildLabel">RUN GUN RIOT · ONLINE ALPHA · BUILD 2026.08.23-update-0040</div>
+  <div class="buildLabel">RUN GUN RIOT · ONLINE ALPHA · BUILD 2026.08.30-update-1343</div>
 </div>
 
 <!-- CLASS SELECT -->
@@ -503,7 +503,7 @@
     <h3>LOCAL SAVE</h3>
     <p>Career records, discoveries, Riot Run times, preferences and weapon skins stay in this browser only.</p>
     <div class="settingsRow" style="justify-content:flex-start;margin-top:12px"><button id="resetSaveBtn" class="sbtn dangerBtn">RESET SAVE DATA</button></div>
-    <div class="buildLabel">ONLINE ALPHA · BUILD 2026.08.23-update-0040 · SINGLE-FILE EDITION</div>
+    <div class="buildLabel">ONLINE ALPHA · BUILD 2026.08.30-update-1343 · SINGLE-FILE EDITION</div>
   </div>
   <button id="releaseCloseBtn" class="btn gold" style="margin-top:14px">BACK</button>
 </div>
@@ -2473,6 +2473,11 @@ const CAREER=(()=>{
       if(place && (!mem.b || place<mem.b)) mem.b=place;
       const xp=10+(kills||0)*5+Math.max(0,11-(place||28))+(win?25:0); mem.cxp+=xp;
       save(); refreshCareer(); return xp; },
+    // Authoritative online correction. The local ledger already logged this match
+    // as a loss (death -> enterSpectate) but the server's signed match_ended result
+    // says the player's TEAM won. Upgrade the outcome only: the match is already
+    // counted, so mem.m must not move. Mirrors the win terms in add() exactly.
+    promoteWin(){ if(G.warmup) return false; load(); mem.w++; if(!mem.b || mem.b>1) mem.b=1; mem.cxp+=25; save(); refreshCareer(); return true; },
     discover(id){ if(G.warmup) return false; load(); if(!id||mem.s.includes(id)) return false; mem.s.push(id); save(); refreshCareer(); return true; },
     finishOnboarding(skipped=false){ if(G.warmup) return; load(); mem.o=skipped?2:1; save(); },
     recordRun(id,time,gold){ if(G.warmup) return {best:false,gold:false}; load(); time=Number(time); if(!id||!Number.isFinite(time)||time<=0) return {best:false,gold:false};
@@ -2727,7 +2732,7 @@ function hydratePreferredRiotTag(profileName){
 function onlineSelfTag(){
   return String(NET?.sessionName||NET?.snapshot?.players?.find?.(p=>p.id===NET.id)?.name||NET?.rosterMeta?.get?.(NET.id)?.name||NET?.profile?.name||currentRiotTag());
 }
-const ONLINE_PROTOCOL=8,ONLINE_BUILD="2026.08.23-update-0040";
+const ONLINE_PROTOCOL=8,ONLINE_BUILD="2026.08.30-update-1343";
 // The controlled online-alpha client and authoritative WebSocket service share
 // this canonical endpoint. The query-string override remains available for QA.
 const NET_DEFAULT_SERVER="wss://rungun.45-32-229-199.sslip.io";
@@ -4083,13 +4088,47 @@ const _netCoreDraw=NET.draw.bind(NET);
 function netInterpolateList(before=[],after=[],alpha,key="id"){const prior=new Map(before.map((value,index)=>[value[key]??index,value]));return after.map((value,index)=>{const old=prior.get(value[key]??index);return old?{...value,x:old.x+(value.x-old.x)*alpha,y:old.y+(value.y-old.y)*alpha}:value;});}
 function netInterpolateFrame(a,b,alpha){const frame={...b,projectiles:netInterpolateList(a.projectiles,b.projectiles,alpha),grenades:netInterpolateList(a.grenades,b.grenades,alpha),cars:netInterpolateList(a.cars,b.cars,alpha),elevators:netInterpolateList(a.elevators,b.elevators,alpha),airdrops:netInterpolateList(a.airdrops,b.airdrops,alpha)};if(a.tram&&b.tram)frame.tram={...b.tram,x:a.tram.x+(b.tram.x-a.tram.x)*alpha,y:a.tram.y+(b.tram.y-a.tram.y)*alpha};return frame;}
 NET.draw=function(){const n=this.snapshots.length,b=this.snapshots[n-1],a=this.snapshots[n-2],authoritative=this.snapshot;let renderFrame=null;if(a&&b){const alpha=clamp((performance.now()-b.receivedAt)/Math.max(50,b.receivedAt-a.receivedAt),0,1),prev=new Map(a.players.map(p=>[p.id,p]));this.renderViewTickQ=Math.round((a.tick+(b.tick-a.tick)*alpha)*4);this.remotes.clear();for(const p of b.players)if(p.id!==this.id){const q=prev.get(p.id);this.remotes.set(p.id,q?{...p,x:q.x+(p.x-q.x)*alpha,y:q.y+(p.y-q.y)*alpha}:p);}renderFrame=netInterpolateFrame(a,b,alpha);this.snapshot=renderFrame;}else if(b)this.renderViewTickQ=Math.round(Number(b.tick)*4);try{return _netCoreDraw();}finally{this.snapshot=authoritative;}};
+/* ===== online career credit ===== */
+// The server is the sole authority on an online result: server.js derives the
+// (team-aware) win flag and PROFILES.record() signs it into match_ended.result,
+// which is idempotent per matchId. Credit the LOCAL career ledger from that signed
+// result so online play feeds classUnlocked()/CLASS_UNLOCKS exactly like offline
+// play does -- previously match_ended only latched G.careerLogged, so online wins
+// never reached rr_career.w and never unlocked Jimo (10) or Warlord (25).
+// Invariant preserved: G.careerLogged stays the per-match single-shot latch that
+// endMatch()/enterSpectate()/leaveSpectate()/finalizeEliminationLog() honour, so a
+// match is logged exactly once; ONLINE_CAREER_MATCH_ID additionally makes a repeat
+// match_ended for the same match (resume, resend) a no-op.
+let ONLINE_CAREER_MATCH_ID=null;
+function creditOnlineCareerResult(result){
+  if(!result||typeof result!=="object")return false;
+  const matchId=typeof result.matchId==="string"&&result.matchId?result.matchId:null;
+  if(!matchId||matchId===ONLINE_CAREER_MATCH_ID)return false;   // no authoritative id -> never guess
+  const win=result.win===true;
+  if(G.careerLogged){
+    // Online, the only path that can beat match_ended to the latch is the local
+    // death flow, which always logs a LOSS: checkWin() and the offline endMatch()
+    // branch cannot run while NET.active (startMatch spawns 0 bots into G.ents and
+    // deathSeq.offlineEnd is gated on !NET.active). So an authoritative win here
+    // means "my team won while I was down" -- upgrade the outcome, never the count.
+    if(!win)return false;
+    ONLINE_CAREER_MATCH_ID=matchId;
+    CAREER.promoteWin();
+    return true;
+  }
+  ONLINE_CAREER_MATCH_ID=matchId;
+  G.careerLogged=true;
+  CAREER.add(win,Math.max(0,Math.floor(Number(result.kills)||0)),Math.max(1,Math.floor(Number(result.placement)||1)));
+  return true;
+}
+/* ===== end online career credit ===== */
 const _netMessage=NET.message.bind(NET);
 NET.message=m=>{
   if(m.type==="ready"&&m.account){NET.profile=m.account.profile;hydratePreferredRiotTag(m.account.profile?.name);try{localStorage.setItem("rr_online_auth",JSON.stringify({id:m.account.id,token:m.account.token}));}catch{}}
   if(["joined","resumed","presence","queue_status","match_roster","match_started","snapshot","match_ended"].includes(m.type)){if(m.mode)NET.mode=m.mode;if(Number.isFinite(Number(m.teamSize)))NET.teamSize=Math.max(1,Math.floor(Number(m.teamSize)));if(Number.isSafeInteger(m.teamId))NET.teamId=m.teamId;}
   if((m.type==="joined"||m.type==="resumed")&&m.name)NET.sessionName=String(m.name);
   if(m.type==="presence"||m.type==="match_roster"){const self=(m.players||[]).find(p=>p.id===NET.id);if(self?.name)NET.sessionName=String(self.name);}
-  if(m.type==="match_ended"&&m.result){G.serverResult=m.result;G.careerLogged=true;G.matchXpEarned=m.result.xp||0;NET.profile={...(NET.profile||{}),xp:m.result.totalXp,wins:m.result.wins,matches:m.result.matches};}
+  if(m.type==="match_ended"&&m.result){G.serverResult=m.result;creditOnlineCareerResult(m.result);G.careerLogged=true;G.matchXpEarned=m.result.xp||0;NET.profile={...(NET.profile||{}),xp:m.result.totalXp,wins:m.result.wins,matches:m.result.matches};}
   const result=_netMessage(m);if(m.type==="snapshot"&&NET.teamSize>1)G.aliveStart=Math.ceil((Number(m.capacity)||G.aliveStart)/NET.teamSize);return result;
 };
 const _netWireMessage=NET.message.bind(NET);NET.rosterMeta=new Map();NET.privateState=null;
@@ -11715,10 +11754,24 @@ function showRelease(v){
   if(RELEASE_OPEN){ MODAL_RETURN_FOCUS=document.activeElement; playSfx("ui_select",{vol:0.5}); setTimeout(()=>document.getElementById("releaseCloseBtn").focus(),0); }
   else { playSfx("ui_back",{vol:0.5}); try{ MODAL_RETURN_FOCUS?.focus(); }catch(e){} }
 }
+/* ===== save-data reset scope ===== */
+// SAVE_DATA_KEYS is everything "RESET SAVE DATA" promises to destroy: progression,
+// the cosmetics gated on it, the chosen tag, and the account binding that owns the
+// server-side half. rr_online_auth is the ONLY handle on the server profile, so
+// keeping it while wiping rr_career leaves two ledgers bound together that can never
+// be reconciled; rr_online_session is a room reservation signed for that same,
+// now-discarded account and must go with it.
+// DEVICE_PREF_KEYS is deliberately preserved: audio, accessibility (reducedFlash,
+// reducedMotion, contrast, uiLarge) and input calibration (aim, deadzone, rumble) are
+// device-level accommodations, not save data. A progression wipe must not silently
+// switch a photosensitive player's flash reduction back off.
+const SAVE_DATA_KEYS=Object.freeze(["rr_career","rr_skins","rr_riot_tag_v1","rr_online_auth","rr_online_session"]);
+const DEVICE_PREF_KEYS=Object.freeze(["rr_prefs"]);
+/* ===== end save-data reset scope ===== */
 function resetLocalSave(){
   const b=document.getElementById("resetSaveBtn");
-  if(!RESET_ARMED){ RESET_ARMED=true; if(b) b.textContent="CONFIRM RESET — PRESS AGAIN"; playSfx("ui_back",{vol:0.5}); RESET_ARM_T=setTimeout(()=>{ RESET_ARMED=false; if(b) b.textContent="RESET SAVE DATA"; },4000); return; }
-  try{ localStorage.removeItem("rr_career"); localStorage.removeItem("rr_skins"); localStorage.removeItem("rr_prefs"); }catch(e){}
+  if(!RESET_ARMED){ RESET_ARMED=true; if(b) b.textContent="CONFIRM RESET — ALSO CLEARS ONLINE ACCOUNT"; playSfx("ui_back",{vol:0.5}); RESET_ARM_T=setTimeout(()=>{ RESET_ARMED=false; if(b) b.textContent="RESET SAVE DATA"; },4000); return; }
+  try{ for(const k of SAVE_DATA_KEYS) localStorage.removeItem(k); }catch(e){}
   if(b){ b.disabled=true; b.textContent="SAVE CLEARED — RELOADING"; }
   setTimeout(()=>location.reload(),350);
 }
