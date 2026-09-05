@@ -40,6 +40,9 @@
   .screen{ position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
     overflow-y:auto; padding:16px 12px; box-sizing:border-box;
     text-align:center; padding:24px; z-index:20; }
+  /* Overflow must start at the top; unsafe centering clips content above scrollTop 0. */
+  .screen{justify-content:safe center;}
+  .screen > *{flex-shrink:0;}
   .hidden{ display:none !important; }
 
   .scanlines::after{ content:""; position:absolute; inset:0; pointer-events:none;
@@ -100,7 +103,7 @@
   .lockRibbon{ margin-top:6px; font:800 9px var(--arcade); letter-spacing:.5px; color:#ffd166; background:rgba(0,0,0,.45); border:1px solid rgba(255,209,102,.5); border-radius:5px; padding:3px 4px; text-align:center; }
   .card .badge{ width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center;
     font-size:19px; margin-bottom:8px; background:rgba(0,0,0,.35); box-shadow:inset 0 0 0 2px var(--cardc), 0 0 12px var(--cardglow); }
-  .card h3{ font-family:var(--arcade); font-size:11px; color:var(--cardc); letter-spacing:.5px; margin-bottom:3px; }
+  .card h3{ font-family:var(--body); font-size:18px; line-height:1.1; color:var(--cardc); letter-spacing:0; margin-bottom:3px; overflow-wrap:anywhere; }
   .card .role{ font-size:11px; color:#c8d6f5; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px; }
   .card .desc{ font-size:11px; color:#9fb3d9; line-height:1.3; margin-bottom:7px; min-height:0; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
   .card .abil{ font-size:11px; color:#8ea6d6; }
@@ -170,6 +173,7 @@
     background:rgba(8,10,28,.85); border:1px solid rgba(255,61,255,.5); border-radius:8px;
     box-shadow:0 0 18px rgba(255,61,255,.35); opacity:0; transition:opacity .25s; pointer-events:none; text-align:center; }
   .toast.show{ opacity:1; }
+  body.hud-armed .toast,body.hud-landed-unarmed .toast{bottom:var(--combat-toast-bottom,180px);max-width:min(620px,calc(100vw - 40px))}
   /* Transit has a fixed bottom DROP panel. Route transient notices through the
      gap below the vehicle so they cannot cover the primary action or rider count. */
   body.hud-transit .toast,body.hud-descending .toast{bottom:auto;top:calc(50% + 110px)}
@@ -239,12 +243,12 @@
   @media (max-height:640px){ .card .badge{ width:32px; height:32px; font-size:15px; margin-bottom:5px; }
     .card .desc{ -webkit-line-clamp:2; } .card{ padding:9px 9px; } .selSub{ margin-bottom:8px; } }
   /* Keep every primary action above the fold on common 720p/768p displays. */
-  @media (max-height:760px){
+  @media (max-height:860px){
     #titleScreen,#classScreen,#victoryScreen,#defeatScreen{ justify-content:flex-start; padding:10px 12px; }
     #titleScreen .crown{ font-size:22px; margin-bottom:-4px; }
     #titleScreen .logo .l1{ font-size:clamp(25px,6vh,48px); }
     #titleScreen .logo .l2{ font-size:clamp(28px,6.6vh,52px); }
-    #titleScreen .logo img{max-width:min(400px,68vw)!important;max-height:300px;object-fit:contain;}
+    #titleScreen .logo img{max-width:min(400px,68vw)!important;max-height:240px;object-fit:contain;}
     #titleScreen .tagline{ margin:5px 0 10px; }
     #titleScreen .controls{ margin-top:12px; line-height:1.3; }
     #titleScreen .settingsRow{ margin-top:10px; gap:6px; }
@@ -266,6 +270,10 @@
     .endPoiRecap{ margin-bottom:9px; max-height:30vh; overflow:auto; }
     .endActions{ gap:8px; }
     .endActions .btn{ padding:11px 18px; }
+  }
+  @media (min-width:1000px) and (max-height:860px){
+    #classScreen .cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));width:min(1180px,96vw);}
+    #classScreen .card{width:auto;}
   }
   @media (max-width:520px){
     .endActions{ flex-wrap:wrap; justify-content:center; }
@@ -363,14 +371,14 @@
     <button id="fsBtn" class="sbtn">⛶ FULLSCREEN</button>
   </div>
   <div id="career">CAREER · NO MATCHES YET</div>
-  <div class="buildLabel">RUN GUN RIOT · ONLINE ALPHA · BUILD 2026.08.30-update-1343</div>
+  <div class="buildLabel">RUN GUN RIOT · ONLINE ALPHA · BUILD 2026.09.04-mobility-01</div>
 </div>
 
 <!-- CLASS SELECT -->
 <div id="classScreen" class="screen scanlines vignette hidden">
   <div class="bgwrap"></div>
   <div class="selTitle">SELECT YOUR CLASS</div>
-  <div class="selSub">One island. Eight classes. Endless ways to win.</div>
+  <div class="selSub">Eight starting classes. Two unlockable fighters. Find your playstyle.</div>
   <div id="cards" class="cards"></div>
   <div id="classControls" class="classControls" aria-label="Controls summary"></div>
   <div class="selActions">
@@ -503,7 +511,7 @@
     <h3>LOCAL SAVE</h3>
     <p>Career records, discoveries, Riot Run times, preferences and weapon skins stay in this browser only.</p>
     <div class="settingsRow" style="justify-content:flex-start;margin-top:12px"><button id="resetSaveBtn" class="sbtn dangerBtn">RESET SAVE DATA</button></div>
-    <div class="buildLabel">ONLINE ALPHA · BUILD 2026.08.30-update-1343 · SINGLE-FILE EDITION</div>
+    <div class="buildLabel">ONLINE ALPHA · BUILD 2026.09.04-mobility-01 · SINGLE-FILE EDITION</div>
   </div>
   <button id="releaseCloseBtn" class="btn gold" style="margin-top:14px">BACK</button>
 </div>
@@ -835,54 +843,809 @@ const CLASSES = {
   jumper: {
     id:"jumper", name:"Jumper", role:"All-Rounder", icon:"❤", c:"#ff3b3b", c2:"#1e7bff",
     desc:"Balanced movement and clean platforming. Reliable in any fight.",
-    ability:"Power Jump", special:"Sky Recovery", specialDir:"up", hp:110, speed:280, jump:1000, startWeapon:"m_club", startHeal:1, power:1.0, armor:1.0, cdMult:1.0,
+    ability:"Power Jump", special:"Sky Recovery", specialDir:"up", hp:110, speed:280, jump:1000, startWeapon:"m_club", startHeal:1, cdMult:1.0,
   },
   blaster: {
     id:"blaster", name:"Blaster", role:"Ranged Shooter", icon:"◎", c:"#00c8ff", c2:"#f2f7ff",
-    desc:"Precision energy weapons and strong ranged pressure. Dashes to reposition.",
-    ability:"Energy Dash", special:"Charge Cannon", specialDir:"side", hp:95, speed:270, jump:950, startWeapon:"m_baton", startHeal:0, power:1.15, armor:1.05, cdMult:0.9,
+    desc:"Short jet bursts launch you into a new firing angle. Plant your feet to charge a piercing cannon.",
+    ability:"Jet Burst", special:"Charge Cannon", specialDir:"side", hp:95, speed:270, jump:950, startWeapon:"m_baton", startHeal:0, cdMult:0.9,
   },
   ninja: {
     id:"ninja", name:"Ninja", role:"Mobility / Melee", icon:"✦", c:"#e8324a", c2:"#1b1b26",
-    desc:"Dash-slash assassin. Punishes anyone who lets you get close.",
-    ability:"Dash Slash", special:"Shadow Step", specialDir:"side", hp:95, speed:315, jump:1060, startWeapon:"m_katana", startHeal:0, power:1.1, armor:1.05, cdMult:0.85,
+    desc:"Burst up a wall, briefly cling, then kick away. Slash or shadow-step once your hands are free.",
+    ability:"Dash Slash", special:"Shadow Step", specialDir:"side", hp:95, speed:315, jump:1060, startWeapon:"m_katana", startHeal:0, cdMult:0.85,
   },
   builder: {
     id:"builder", name:"Builder", role:"Utility", icon:"◫", c:"#ffb000", c2:"#00d7b9",
-    desc:"Deploys hard-light walls for instant cover. Controls the fight with structures.",
-    ability:"Build Wall", special:"Ramp Forge", specialDir:"side", hp:105, speed:265, jump:960, startWeapon:"m_wrench", startHeal:1, power:0.9, armor:0.9, cdMult:0.8,
+    desc:"Forge walls and steps, then climb your own structures. Build a route as well as cover.",
+    ability:"Build Wall", special:"Ramp Forge", specialDir:"side", hp:105, speed:265, jump:960, startWeapon:"m_wrench", startHeal:1, cdMult:0.8,
   },
   tank: {
     id:"tank", name:"Tank", role:"Defense", icon:"⬢", c:"#6abe30", c2:"#2f4530",
-    desc:"Heavy anchor. Overshields on demand and slams down a barricade.",
-    ability:"Shield Wall", special:"Bull Rush", specialDir:"side", hp:145, speed:225, jump:860, startWeapon:"m_slab", startHeal:1, power:1.0, armor:0.75, cdMult:1.15,
+    desc:"Heavy frame and cover. Hold Jump after the apex to hover on twin thrusters while firing.",
+    ability:"Shield Wall", special:"Bull Rush", specialDir:"side", hp:145, speed:225, jump:860, startWeapon:"m_slab", startHeal:1, cdMult:1.15,
   },
   skater: {
     id:"skater", name:"Skater", role:"Speed", icon:"⚡", c:"#b84dff", c2:"#31e85a",
-    desc:"Fastest hero on the island. Hover-dashes across gaps and out of trouble.",
-    ability:"Hover Dash", special:"Rail Grind", specialDir:"up", hp:90, speed:335, jump:990, startWeapon:"m_deck", startHeal:0, power:0.9, armor:1.15, cdMult:0.9,
+    desc:"Rush across gaps on your board or spring upward with Rail Grind. Fast, fragile, and hard to pin down.",
+    ability:"Board Rush", special:"Rail Grind", specialDir:"up", hp:90, speed:335, jump:990, startWeapon:"m_deck", startHeal:0, cdMult:0.9,
   },
   mage: {
     id:"mage", name:"Mage", role:"Portal / Control", icon:"◍", c:"#8a5cff", c2:"#ffd166",
-    desc:"Arcane-tech caster. Blinks through a portal gate to reposition instantly.",
-    ability:"Portal Gate", special:"Gravity Well", specialDir:"side", hp:95, speed:265, jump:950, startWeapon:"m_staff", startHeal:1, power:1.05, armor:1.0, cdMult:0.95,
+    desc:"Aim a short-range portal to a clear position. Gravity Well pulls rivals out of cover.",
+    ability:"Portal Gate", special:"Gravity Well", specialDir:"side", hp:95, speed:265, jump:950, startWeapon:"m_staff", startHeal:1, cdMult:0.95,
   },
   demolitionist: {
     id:"demolitionist", name:"Demolitionist", role:"Explosives", icon:"✸", c:"#ff7a1a", c2:"#20160f",
     desc:"Launches rocket bursts that break builds and blow open fights.",
-    ability:"Rocket Burst", special:"Rocket Jump", specialDir:"up", hp:110, speed:255, jump:930, startWeapon:"m_pipe", startHeal:0, power:1.2, armor:0.95, cdMult:1.05,
+    ability:"Rocket Burst", special:"Rocket Jump", specialDir:"up", hp:110, speed:255, jump:930, startWeapon:"m_pipe", startHeal:0, cdMult:1.05,
   },
   jimo: {
     id:"jimo", name:"Jimo", role:"Speed / Momentum", icon:"◓", c:"#8b93a3", c2:"#2a2f3e",
-    desc:"A chonky, internet-famous trash panda who treats physics as a polite suggestion. Somehow the fastest thing on the island — spin-dashes clean through anyone in the way.",
-    ability:"Spin Dash", special:"Spring Hop", specialDir:"up", hp:95, speed:340, jump:1020, startWeapon:"m_deck", startHeal:0, power:0.95, armor:1.1, cdMult:0.85,
+    desc:"A relentless trash panda. Hold Jump into a wall to keep climbing; release before attacking. Spin and spring between routes.",
+    ability:"Spin Dash", special:"Spring Hop", specialDir:"up", hp:95, speed:340, jump:1020, startWeapon:"m_deck", startHeal:0, cdMult:0.85,
   },
   warlord: {
     id:"warlord", name:"Warlord", role:"Heavy / Boss", icon:"♛", c:"#3fa14a", c2:"#ff7a1a",
-    desc:"A spike-shelled warlord who turns the arena to ash. Slow and near-unkillable — breathes fire and pounds the earth.",
-    ability:"Flame Breath", special:"Ground Pound", specialDir:"up", hp:150, speed:235, jump:880, startWeapon:"m_slab", startHeal:1, power:1.25, armor:0.7, cdMult:1.15,
+    desc:"A heavy fighter with a slight edge in health. Commit to a leap, then land one crushing ground pound.",
+    ability:"Flame Breath", special:"Ground Pound", specialDir:"up", hp:150, speed:235, jump:880, startWeapon:"m_slab", startHeal:1, cdMult:1.15,
   },
 };
+
+// BEGIN INLINED MOBILITY CONTRACT
+// This block has no runtime imports so its constants and pure functions can be
+// copied into the browser monolith without introducing a second dependency graph.
+
+const MOBILITY_MODE=Object.freeze({
+  NONE:0,
+  WALL_RUN:1,
+  WALL_STICK:2,
+  HOVER:3,
+  BUILD_CLIMB:4,
+  GROUND_POUND_ARMED:5,
+  JET_BURST:6,
+  DASH_SLASH:7,
+  BOARD_RUSH:8,
+  RAIL_GRIND:9,
+  SPIN_DASH:10,
+  SPRING_HOP:11
+});
+const MOBILITY_TICK_RATE=20;
+
+const MOBILITY_SPEC=Object.freeze({
+  ninja:Object.freeze({runVy:-360,runTicks:14,stickTicks:7}),
+  jimo:Object.freeze({runVy:-240,interruptTicks:4}),
+  tank:Object.freeze({hoverDescent:90,hoverBrakePerTick:120,hoverTicks:25,horizontalMultiplier:.65}),
+  builder:Object.freeze({climbVy:-180,climbTicks:20}),
+  warlord:Object.freeze({launchVy:-1050,horizontalMultiplier:.5}),
+  blaster:Object.freeze({dashVx:720,dashTicks:5,liftVy:-360,iframeTicks:4}),
+  dashSlash:Object.freeze({dashVx:860,dashTicks:4,iframeTicks:4}),
+  boardRush:Object.freeze({dashVx:940,dashTicks:5,liftVy:-160,iframeTicks:3}),
+  railGrind:Object.freeze({dashVx:1050,dashTicks:4,liftVy:-620,iframeTicks:4}),
+  spinDash:Object.freeze({dashVx:940,dashTicks:5,iframeTicks:3}),
+  springHop:Object.freeze({dashVx:600,dashTicks:5,liftVy:-1150,iframeTicks:4})
+});
+
+const MODE_VALUES=new Set(Object.values(MOBILITY_MODE));
+const MODE_CLASS=Object.freeze({
+  [MOBILITY_MODE.WALL_STICK]:"ninja",
+  [MOBILITY_MODE.HOVER]:"tank",
+  [MOBILITY_MODE.BUILD_CLIMB]:"builder",
+  [MOBILITY_MODE.GROUND_POUND_ARMED]:"warlord",
+  [MOBILITY_MODE.JET_BURST]:"blaster",
+  [MOBILITY_MODE.DASH_SLASH]:"ninja",
+  [MOBILITY_MODE.BOARD_RUSH]:"skater",
+  [MOBILITY_MODE.RAIL_GRIND]:"skater",
+  [MOBILITY_MODE.SPIN_DASH]:"jimo",
+  [MOBILITY_MODE.SPRING_HOP]:"jimo"
+});
+const DASH_MODES=new Set([
+  MOBILITY_MODE.JET_BURST,MOBILITY_MODE.DASH_SLASH,MOBILITY_MODE.BOARD_RUSH,
+  MOBILITY_MODE.RAIL_GRIND,MOBILITY_MODE.SPIN_DASH,MOBILITY_MODE.SPRING_HOP
+]);
+const DASH_DEFINITION=Object.freeze({
+  [MOBILITY_MODE.JET_BURST]:Object.freeze({classId:"blaster",...MOBILITY_SPEC.blaster}),
+  [MOBILITY_MODE.DASH_SLASH]:Object.freeze({classId:"ninja",...MOBILITY_SPEC.dashSlash}),
+  [MOBILITY_MODE.BOARD_RUSH]:Object.freeze({classId:"skater",...MOBILITY_SPEC.boardRush}),
+  [MOBILITY_MODE.RAIL_GRIND]:Object.freeze({classId:"skater",...MOBILITY_SPEC.railGrind}),
+  [MOBILITY_MODE.SPIN_DASH]:Object.freeze({classId:"jimo",...MOBILITY_SPEC.spinDash}),
+  [MOBILITY_MODE.SPRING_HOP]:Object.freeze({classId:"jimo",...MOBILITY_SPEC.springHop})
+});
+
+function makeMobilityState(classId,onGround=true){
+  return {
+    mobilityMode:MOBILITY_MODE.NONE,
+    mobilityDir:0,
+    mobilitySeq:0,
+    ninjaRunTicksRemaining:classId==="ninja"&&onGround?MOBILITY_SPEC.ninja.runTicks:0,
+    ninjaStickTicksRemaining:classId==="ninja"&&onGround?MOBILITY_SPEC.ninja.stickTicks:0,
+    tankHoverFuelTicks:classId==="tank"&&onGround?MOBILITY_SPEC.tank.hoverTicks:0,
+    builderClimbFuelTicks:classId==="builder"&&onGround?MOBILITY_SPEC.builder.climbTicks:0,
+    jimoMobilityInterruptTicks:0,
+    jimoWallAscentLock:false,
+    groundPoundArmed:false,
+    groundPoundImpactConsumed:false,
+    dashTicksRemaining:0
+  };
+}
+
+function readMobilityState(body){
+  const source=body||{},classId=source.classId,onGround=!!source.onGround;
+  return {
+    mobilityMode:source.mobilityMode===undefined?MOBILITY_MODE.NONE:source.mobilityMode,
+    mobilityDir:source.mobilityDir===undefined?0:source.mobilityDir,
+    mobilitySeq:source.mobilitySeq===undefined?0:source.mobilitySeq,
+    ninjaRunTicksRemaining:source.ninjaRunTicksRemaining===undefined?(classId==="ninja"&&onGround?MOBILITY_SPEC.ninja.runTicks:0):source.ninjaRunTicksRemaining,
+    ninjaStickTicksRemaining:source.ninjaStickTicksRemaining===undefined?(classId==="ninja"&&onGround?MOBILITY_SPEC.ninja.stickTicks:0):source.ninjaStickTicksRemaining,
+    tankHoverFuelTicks:source.tankHoverFuelTicks===undefined?(classId==="tank"&&onGround?MOBILITY_SPEC.tank.hoverTicks:0):source.tankHoverFuelTicks,
+    builderClimbFuelTicks:source.builderClimbFuelTicks===undefined?(classId==="builder"&&onGround?MOBILITY_SPEC.builder.climbTicks:0):source.builderClimbFuelTicks,
+    jimoMobilityInterruptTicks:source.jimoMobilityInterruptTicks===undefined?0:source.jimoMobilityInterruptTicks,
+    jimoWallAscentLock:source.jimoWallAscentLock===undefined?false:source.jimoWallAscentLock,
+    groundPoundArmed:source.groundPoundArmed===undefined?false:source.groundPoundArmed,
+    groundPoundImpactConsumed:source.groundPoundImpactConsumed===undefined?false:source.groundPoundImpactConsumed,
+    dashTicksRemaining:source.dashTicksRemaining===undefined?0:source.dashTicksRemaining
+  };
+}
+
+function transitionMobility(state,mode,dir=0){
+  const nextDir=mode===MOBILITY_MODE.NONE?0:dir;
+  if(state.mobilityMode===mode&&state.mobilityDir===nextDir)return {...state};
+  return {...state,mobilityMode:mode,mobilityDir:nextDir,mobilitySeq:state.mobilitySeq+1};
+}
+
+function qualifyingWallContact(contact,bodyHeight=44){
+  return !!contact&&[1,-1].includes(contact.dir)&&contact.solid===true&&contact.live!==false&&
+    contact.oneWay!==true&&contact.bldg!==true&&Number.isFinite(contact.faceHeight)&&
+    Number.isFinite(contact.overlapY)&&contact.faceHeight>=bodyHeight&&contact.overlapY>=bodyHeight*.5;
+}
+
+function horizontalIntent(input){
+  if(Number.isFinite(input?.ax))return Math.max(-1,Math.min(1,input.ax));
+  return (input?.right?1:0)-(input?.left?1:0);
+}
+
+function mobilityTickDelta(dt){
+  return Number.isFinite(dt)&&dt>0?dt*MOBILITY_TICK_RATE:0;
+}
+
+function consumeTicks(value,tickDelta){
+  const remaining=Math.max(0,value-tickDelta);
+  return remaining<1e-9?0:remaining;
+}
+
+function mobilityActiveWindow(remainingTicks,tickDelta=1){
+  const requested=Number.isFinite(tickDelta)&&tickDelta>0?tickDelta:0;
+  const active=Math.min(Math.max(0,remainingTicks),requested);
+  return {activeTickDelta:active,activeFraction:requested>0?active/requested:0};
+}
+
+function wallIntentEligible(input,context){
+  const contact=context?.wallContact,dir=horizontalIntent(input);
+  return qualifyingWallContact(contact,context?.bodyHeight||44)&&dir*contact.dir>.15;
+}
+
+function controlAvailable(context){
+  return context?.alive!==false&&!context?.downed&&!context?.onGround&&!context?.gliding&&
+    !context?.riding&&!context?.driving&&!context?.zipping&&!context?.grappling&&!context?.ledge&&
+    !context?.authoredLadder&&!context?.stunned&&!context?.committedAbility&&!context?.transport;
+}
+
+// Call before movement. It reads the prior accepted contact and returns a vertical
+// override plus combat lock; it never consumes a duration budget.
+function planWallMobility(state,classId,input,context={}){
+  let next={...state};
+  const edge=!!input?.jump,held=!!input?.jumpHeld,contact=context.wallContact;
+  const eligible=controlAvailable(context)&&!context.ceilingBlocked&&!edge&&held&&wallIntentEligible(input,context);
+  const exit=()=>{next=transitionMobility(next,MOBILITY_MODE.NONE,0);};
+
+  if(classId==="ninja"){
+    if(next.mobilityMode===MOBILITY_MODE.WALL_RUN||next.mobilityMode===MOBILITY_MODE.WALL_STICK){
+      if(!eligible)exit();
+      else next=transitionMobility(next,next.mobilityMode,contact.dir);
+    }else if(eligible&&next.ninjaRunTicksRemaining>0){
+      next=transitionMobility(next,MOBILITY_MODE.WALL_RUN,contact.dir);
+    }
+    if(next.mobilityMode===MOBILITY_MODE.WALL_RUN)return {state:next,verticalVelocity:MOBILITY_SPEC.ninja.runVy,combatLocked:true,...mobilityActiveWindow(next.ninjaRunTicksRemaining,context.tickDelta??1)};
+    if(next.mobilityMode===MOBILITY_MODE.WALL_STICK)return {state:next,verticalVelocity:0,combatLocked:true,...mobilityActiveWindow(next.ninjaStickTicksRemaining,context.tickDelta??1)};
+    return {state:next,verticalVelocity:null,combatLocked:false,activeTickDelta:0,activeFraction:0};
+  }
+
+  if(classId==="jimo"){
+    if(next.mobilityMode===MOBILITY_MODE.WALL_RUN&&(!eligible||next.jimoMobilityInterruptTicks>0))exit();
+    else if(next.mobilityMode===MOBILITY_MODE.WALL_RUN)next=transitionMobility(next,MOBILITY_MODE.WALL_RUN,contact.dir);
+    else if(next.mobilityMode!==MOBILITY_MODE.WALL_RUN&&eligible&&next.jimoMobilityInterruptTicks===0){
+      next=transitionMobility(next,MOBILITY_MODE.WALL_RUN,contact.dir);
+      next.jimoWallAscentLock=true;
+    }
+    const active=next.mobilityMode===MOBILITY_MODE.WALL_RUN;
+    return {state:next,verticalVelocity:active?MOBILITY_SPEC.jimo.runVy:null,combatLocked:active||next.jimoWallAscentLock,activeTickDelta:active?(context.tickDelta??1):0,activeFraction:active?1:0};
+  }
+
+  if(next.mobilityMode===MOBILITY_MODE.WALL_RUN||next.mobilityMode===MOBILITY_MODE.WALL_STICK)exit();
+  return {state:next,verticalVelocity:null,combatLocked:false,activeTickDelta:0,activeFraction:0};
+}
+
+// Call after swept collision. It consumes only movement that actually ran and
+// resolves landing, ceiling, contact, damage, and apex transitions. Server passes
+// tickDelta=1; variable-dt offline code passes mobilityTickDelta(dt).
+function finishWallMobilityTick(state,classId,result={}){
+  let next={...state};
+  const tickDelta=Number.isFinite(result.tickDelta)&&result.tickDelta>=0?result.tickDelta:1;
+  const elapsedTickDelta=Number.isFinite(result.elapsedTickDelta)&&result.elapsedTickDelta>=0?result.elapsedTickDelta:tickDelta;
+  const exit=()=>{next=transitionMobility(next,MOBILITY_MODE.NONE,0);};
+  const wallMode=next.mobilityMode===MOBILITY_MODE.WALL_RUN||next.mobilityMode===MOBILITY_MODE.WALL_STICK;
+
+  if(result.landed){
+    if(wallMode)exit();
+    next.ninjaRunTicksRemaining=classId==="ninja"?MOBILITY_SPEC.ninja.runTicks:0;
+    next.ninjaStickTicksRemaining=classId==="ninja"?MOBILITY_SPEC.ninja.stickTicks:0;
+    next.jimoMobilityInterruptTicks=0;
+    next.jimoWallAscentLock=false;
+    return next;
+  }
+
+  if(!wallMode&&!(classId==="jimo"&&(next.jimoWallAscentLock||next.jimoMobilityInterruptTicks>0)))return next;
+
+  if(result.damageInterrupted){
+    exit();
+    if(classId==="jimo"){
+      next.jimoMobilityInterruptTicks=MOBILITY_SPEC.jimo.interruptTicks;
+      next.jimoWallAscentLock=true;
+    }
+  }else if(next.jimoMobilityInterruptTicks>0)next.jimoMobilityInterruptTicks=consumeTicks(next.jimoMobilityInterruptTicks,elapsedTickDelta);
+
+  if(result.ceilingHit)exit();
+
+  if(wallMode&&(!result.contactValid||!result.jumpHeld||!result.intoWall))exit();
+
+  if(classId==="ninja"&&next.mobilityMode===MOBILITY_MODE.WALL_RUN&&result.movementApplied){
+    next.ninjaRunTicksRemaining=consumeTicks(next.ninjaRunTicksRemaining,tickDelta);
+    if(next.ninjaRunTicksRemaining===0){
+      if(result.contactValid&&result.jumpHeld&&result.intoWall&&next.ninjaStickTicksRemaining>0)
+        next=transitionMobility(next,MOBILITY_MODE.WALL_STICK,next.mobilityDir);
+      else exit();
+    }
+  }else if(classId==="ninja"&&next.mobilityMode===MOBILITY_MODE.WALL_STICK){
+    if(result.contactValid&&result.jumpHeld&&result.intoWall){
+      next.ninjaStickTicksRemaining=consumeTicks(next.ninjaStickTicksRemaining,tickDelta);
+      if(next.ninjaStickTicksRemaining===0)exit();
+    }else exit();
+  }
+
+  if(classId==="jimo"&&next.jimoWallAscentLock&&(Number(result.vy)>=0||result.clearSequence))
+    next.jimoWallAscentLock=false;
+  return next;
+}
+
+function planTankHover(state,input,context={}){
+  let next={...state};
+  const tickDelta=Number.isFinite(context.tickDelta)&&context.tickDelta>=0?context.tickDelta:1;
+  const active=next.mobilityMode===MOBILITY_MODE.HOVER;
+  const eligible=controlAvailable(context)&&!!input?.jumpHeld&&Number(context.vy)>=0&&next.tankHoverFuelTicks>0;
+  if(active&&!eligible)next=transitionMobility(next,MOBILITY_MODE.NONE,0);
+  else if(eligible){
+    const dir=Math.sign(horizontalIntent(input));
+    next=transitionMobility(next,MOBILITY_MODE.HOVER,dir);
+  }
+  if(next.mobilityMode!==MOBILITY_MODE.HOVER)return {state:next,verticalVelocity:null,horizontalMultiplier:1,combatLocked:false,weaponAllowed:false,activeTickDelta:0,activeFraction:0};
+  const window=mobilityActiveWindow(next.tankHoverFuelTicks,tickDelta);
+  return {state:next,verticalVelocity:Math.max(MOBILITY_SPEC.tank.hoverDescent,Number(context.vy)-MOBILITY_SPEC.tank.hoverBrakePerTick*window.activeTickDelta),horizontalMultiplier:MOBILITY_SPEC.tank.horizontalMultiplier,combatLocked:true,weaponAllowed:true,...window};
+}
+
+function finishTankHoverTick(state,result={}){
+  let next={...state};
+  const tickDelta=Number.isFinite(result.tickDelta)&&result.tickDelta>=0?result.tickDelta:1;
+  if(result.landed){
+    next=transitionMobility(next,MOBILITY_MODE.NONE,0);
+    next.tankHoverFuelTicks=MOBILITY_SPEC.tank.hoverTicks;
+    return next;
+  }
+  if(result.cancelled||result.ceilingHit)next=transitionMobility(next,MOBILITY_MODE.NONE,0);
+  else if(next.mobilityMode===MOBILITY_MODE.HOVER&&result.movementApplied){
+    next.tankHoverFuelTicks=consumeTicks(next.tankHoverFuelTicks,tickDelta);
+    if(next.tankHoverFuelTicks===0)next=transitionMobility(next,MOBILITY_MODE.NONE,0);
+  }
+  return next;
+}
+
+function planBuilderClimb(state,input,context={}){
+  let next={...state};
+  const contact=context.wallContact,up=!!input?.up||Number(input?.climb)<-.15;
+  const ownBuild=wallIntentEligible(input,context)&&typeof context.playerId==="string"&&context.playerId.length>0&&
+    typeof contact?.buildId==="string"&&contact.buildId.length>0&&contact.ownerId===context.playerId;
+  const eligible=controlAvailable({...context,authoredLadder:false})&&!context.authoredLadder&&!context.ceilingBlocked&&up&&ownBuild&&next.builderClimbFuelTicks>0;
+  if(next.mobilityMode===MOBILITY_MODE.BUILD_CLIMB&&!eligible)next=transitionMobility(next,MOBILITY_MODE.NONE,0);
+  else if(eligible)next=transitionMobility(next,MOBILITY_MODE.BUILD_CLIMB,contact.dir);
+  const active=next.mobilityMode===MOBILITY_MODE.BUILD_CLIMB;
+  return {state:next,verticalVelocity:active?MOBILITY_SPEC.builder.climbVy:null,combatLocked:active,...(active?mobilityActiveWindow(next.builderClimbFuelTicks,context.tickDelta??1):{activeTickDelta:0,activeFraction:0})};
+}
+
+function finishBuilderClimbTick(state,result={}){
+  let next={...state};
+  const tickDelta=Number.isFinite(result.tickDelta)&&result.tickDelta>=0?result.tickDelta:1;
+  if(result.landed){
+    next=transitionMobility(next,MOBILITY_MODE.NONE,0);
+    next.builderClimbFuelTicks=MOBILITY_SPEC.builder.climbTicks;
+    return next;
+  }
+  if(result.cancelled||result.ceilingHit||result.damageInterrupted||!result.contactValid)
+    next=transitionMobility(next,MOBILITY_MODE.NONE,0);
+  else if(next.mobilityMode===MOBILITY_MODE.BUILD_CLIMB&&result.movementApplied){
+    next.builderClimbFuelTicks=consumeTicks(next.builderClimbFuelTicks,tickDelta);
+    if(next.builderClimbFuelTicks===0)next=transitionMobility(next,MOBILITY_MODE.NONE,0);
+  }
+  return next;
+}
+
+function startDashMobility(state,classId,mode,dir){
+  const definition=DASH_DEFINITION[mode];
+  if(!definition||definition.classId!==classId||![1,-1].includes(dir))return {accepted:false,state:{...state},initialVerticalVelocity:null,iframeTicks:0};
+  let next=transitionMobility(state,mode,dir);
+  next.dashTicksRemaining=definition.dashTicks;
+  return {accepted:true,state:next,initialVerticalVelocity:Number.isFinite(definition.liftVy)?definition.liftVy:null,iframeTicks:definition.iframeTicks};
+}
+
+function planDashMobility(state,classId,context={}){
+  const definition=DASH_DEFINITION[state.mobilityMode],active=!!definition&&definition.classId===classId&&state.dashTicksRemaining>0;
+  return {state:{...state},horizontalVelocity:active?state.mobilityDir*definition.dashVx:null,combatLocked:active,weaponAllowed:active,...(active?mobilityActiveWindow(state.dashTicksRemaining,context.tickDelta??1):{activeTickDelta:0,activeFraction:0})};
+}
+
+function finishDashMobilityTick(state,result={}){
+  let next={...state};
+  const tickDelta=Number.isFinite(result.tickDelta)&&result.tickDelta>=0?result.tickDelta:1;
+  if(!DASH_MODES.has(next.mobilityMode))return next;
+  if(result.cancelled||result.obstacleHit||result.transport||result.downed||result.dead){
+    next.dashTicksRemaining=0;
+    return transitionMobility(next,MOBILITY_MODE.NONE,0);
+  }
+  if(result.movementApplied)next.dashTicksRemaining=consumeTicks(next.dashTicksRemaining,tickDelta);
+  if(next.dashTicksRemaining===0)next=transitionMobility(next,MOBILITY_MODE.NONE,0);
+  return next;
+}
+
+function armGroundPound(state,context={}){
+  const accepted=context.classId==="warlord"&&context.grounded===true&&!context.conflictingControl&&!context.cooldownActive;
+  if(!accepted)return {accepted:false,state:{...state},verticalVelocity:null,horizontalMultiplier:1,combatLocked:false};
+  let next={...state,groundPoundArmed:true,groundPoundImpactConsumed:false};
+  next=transitionMobility(next,MOBILITY_MODE.GROUND_POUND_ARMED,0);
+  return {accepted:true,state:next,verticalVelocity:MOBILITY_SPEC.warlord.launchVy,horizontalMultiplier:MOBILITY_SPEC.warlord.horizontalMultiplier,combatLocked:true};
+}
+
+function planGroundPound(state){
+  const active=state.mobilityMode===MOBILITY_MODE.GROUND_POUND_ARMED&&state.groundPoundArmed&&!state.groundPoundImpactConsumed;
+  return {state:{...state},verticalVelocity:null,horizontalMultiplier:active?MOBILITY_SPEC.warlord.horizontalMultiplier:1,combatLocked:active,weaponAllowed:false,activeTickDelta:active?1:0,activeFraction:active?1:0};
+}
+
+function finishGroundPoundTick(state,result={}){
+  let next={...state};
+  if(!next.groundPoundArmed)return {state:next,impact:false};
+  if(result.cancelled||result.transport||result.downed||result.dead||result.matchEnded||result.classChanged||result.stunned){
+    next.groundPoundArmed=false;
+    next=transitionMobility(next,MOBILITY_MODE.NONE,0);
+    return {state:next,impact:false};
+  }
+  if(result.landed&&result.descending){
+    next.groundPoundArmed=false;
+    next.groundPoundImpactConsumed=true;
+    next=transitionMobility(next,MOBILITY_MODE.NONE,0);
+    return {state:next,impact:true};
+  }
+  return {state:next,impact:false};
+}
+
+function assertMobilityState(state,classId){
+  const integer=(value,min,max)=>Number.isSafeInteger(value)&&value>=min&&value<=max;
+  if(!state||!MODE_VALUES.has(state.mobilityMode)||![0,-1,1].includes(state.mobilityDir)||
+    !integer(state.mobilitySeq,0,Number.MAX_SAFE_INTEGER)||
+    !integer(state.ninjaRunTicksRemaining,0,MOBILITY_SPEC.ninja.runTicks)||
+    !integer(state.ninjaStickTicksRemaining,0,MOBILITY_SPEC.ninja.stickTicks)||
+    !integer(state.tankHoverFuelTicks,0,MOBILITY_SPEC.tank.hoverTicks)||
+    !integer(state.builderClimbFuelTicks,0,MOBILITY_SPEC.builder.climbTicks)||
+    !integer(state.jimoMobilityInterruptTicks,0,MOBILITY_SPEC.jimo.interruptTicks)||
+    typeof state.jimoWallAscentLock!=="boolean"||typeof state.groundPoundArmed!=="boolean"||
+    typeof state.groundPoundImpactConsumed!=="boolean"||!integer(state.dashTicksRemaining,0,5))
+    throw new Error("MOBILITY_STATE_INVALID");
+
+  const mode=state.mobilityMode;
+  if(mode===MOBILITY_MODE.NONE&&(state.mobilityDir!==0||state.dashTicksRemaining!==0))throw new Error("MOBILITY_STATE_INVALID");
+  if(mode===MOBILITY_MODE.WALL_RUN&&!(["ninja","jimo"].includes(classId)&&[1,-1].includes(state.mobilityDir)))throw new Error("MOBILITY_STATE_INVALID");
+  if(MODE_CLASS[mode]&&MODE_CLASS[mode]!==classId)throw new Error("MOBILITY_STATE_INVALID");
+  if([MOBILITY_MODE.WALL_STICK,MOBILITY_MODE.BUILD_CLIMB,...DASH_MODES].includes(mode)&&![1,-1].includes(state.mobilityDir))throw new Error("MOBILITY_STATE_INVALID");
+  if(DASH_MODES.has(mode)!==(state.dashTicksRemaining>0))throw new Error("MOBILITY_STATE_INVALID");
+  if(DASH_MODES.has(mode)&&state.dashTicksRemaining>DASH_DEFINITION[mode].dashTicks)throw new Error("MOBILITY_STATE_INVALID");
+  if(mode===MOBILITY_MODE.WALL_RUN&&classId==="ninja"&&state.ninjaRunTicksRemaining===0||
+    mode===MOBILITY_MODE.WALL_STICK&&state.ninjaStickTicksRemaining===0||
+    mode===MOBILITY_MODE.HOVER&&state.tankHoverFuelTicks===0||
+    mode===MOBILITY_MODE.BUILD_CLIMB&&state.builderClimbFuelTicks===0)throw new Error("MOBILITY_STATE_INVALID");
+  if(classId!=="ninja"&&(state.ninjaRunTicksRemaining!==0||state.ninjaStickTicksRemaining!==0)||
+    classId!=="tank"&&state.tankHoverFuelTicks!==0||classId!=="builder"&&state.builderClimbFuelTicks!==0||
+    classId!=="jimo"&&(state.jimoMobilityInterruptTicks!==0||state.jimoWallAscentLock)||
+    classId!=="warlord"&&(state.groundPoundArmed||state.groundPoundImpactConsumed))throw new Error("MOBILITY_STATE_INVALID");
+  if((mode===MOBILITY_MODE.GROUND_POUND_ARMED)!==state.groundPoundArmed||
+    state.groundPoundArmed&&state.groundPoundImpactConsumed)throw new Error("MOBILITY_STATE_INVALID");
+  return state;
+}
+
+/* RunGun Riot mobility artwork helpers.
+   Code-native only: no image loads, particle arrays, random sampling, or retained state.
+
+   Integration contract:
+   - mobilityMode: compact authoritative ID below.
+   - mobilityDir: -1, 0, or 1. Falls back to face when zero/missing.
+   - mobilitySeq: transition counter. The caller deduplicates one-shot ability events;
+     this draw helper renders loops only and is safe on a reconnect snapshot.
+   - x/y/w/h, face, vx/vy, onGround: existing authoritative pose inputs.
+   - time is performance.now()-style milliseconds.
+
+   Pose/weapon guidance for the existing eight-pose sheets:
+   wall_run, wall_stick, build_climb => climb pose, hide weapon for hand readability.
+   hover, jet_burst, rail_grind, spring_hop => jump pose, keep weapon visible.
+   board_rush => run pose, keep weapon visible above the board line.
+   ground_pound_armed, dash_slash, spin_dash => attack pose, keep weapon visible.
+   Ability cast/impact/land events remain responsible for one-shot combat VFX.
+   drawMobilityLandingFootprint consumes only a deduplicated ground_pound land
+   event; never infer a landing from an onGround mobility snapshot. */
+
+const MOBILITY_MODE_ID=Object.freeze({
+  none:0,
+  wall_run:1,
+  wall_stick:2,
+  hover:3,
+  build_climb:4,
+  ground_pound_armed:5,
+  jet_burst:6,
+  dash_slash:7,
+  board_rush:8,
+  rail_grind:9,
+  spin_dash:10,
+  spring_hop:11
+});
+
+const MOBILITY_PRESENTATION=Object.freeze({
+  1:Object.freeze({pose:"climb",weaponVisible:false}),
+  2:Object.freeze({pose:"climb",weaponVisible:false}),
+  3:Object.freeze({pose:"jump",weaponVisible:true}),
+  4:Object.freeze({pose:"climb",weaponVisible:false}),
+  5:Object.freeze({pose:"attack",weaponVisible:true}),
+  6:Object.freeze({pose:"jump",weaponVisible:true}),
+  7:Object.freeze({pose:"attack",weaponVisible:true}),
+  8:Object.freeze({pose:"run",weaponVisible:true}),
+  9:Object.freeze({pose:"jump",weaponVisible:true}),
+  10:Object.freeze({pose:"attack",weaponVisible:true}),
+  11:Object.freeze({pose:"jump",weaponVisible:true})
+});
+
+const MOBILITY_ICON_LABEL=Object.freeze({
+  jumper:"Sky recovery",
+  blaster:"Jet burst",
+  ninja:"Wall runner",
+  builder:"Scaffold climb",
+  tank:"Twin hover",
+  skater:"Board rush",
+  mage:"Portal step",
+  demolitionist:"Rocket jump",
+  jimo:"Endless wall run",
+  warlord:"Armed descent"
+});
+
+const MOBILITY_ICON_INNER=Object.freeze({
+  jumper:'<path d="M12 3 7.5 9h3v5h3V9h3L12 3Z"/><path d="M5 13c1.8 0 3.1.7 4.1 2.1M19 13c-1.8 0-3.1.7-4.1 2.1M7 19h10"/>',
+  blaster:'<path d="M5 7h9l4 5-4 5H5l4-5-4-5Z"/><path d="M3 9h4M2 12h5M3 15h4"/>',
+  ninja:'<path d="M5 3v18M8 6h4M8 12h5M8 18h4"/><circle cx="14.5" cy="9" r="1.8"/><path d="m16 11 3 4"/>',
+  builder:'<path d="M6 3v18M18 3v18M6 7h12M6 12h12M6 17h12"/><path d="m9 5 6 4-6 4"/>',
+  tank:'<path d="M6 5h12v8H6zM8 13l-2 7 5-5M16 13l2 7-5-5"/><path d="M9 8h6"/>',
+  skater:'<path d="M3 14c5 3 13 3 18 0M6 17h12"/><circle cx="8" cy="19" r="1.5"/><circle cx="16" cy="19" r="1.5"/><path d="m4 10 4 2M3 7l6 3"/>',
+  mage:'<circle cx="12" cy="12" r="7"/><path d="M12 5c4 3 4 11 0 14M12 5c-4 3-4 11 0 14M7 12h10"/>',
+  demolitionist:'<path d="m9 4 6 3v8l-3 3-3-3V4Z"/><path d="m10 18-2 3M14 18l2 3M12 18v4"/>',
+  jimo:'<path d="M5 3v18M9 6c5 0 8 3 8 7M17 13l-3-2M17 13l-2 3"/><path d="M9 10h3M9 16h3"/>',
+  warlord:'<path d="m6 5 6 5 6-5M6 11l6 5 6-5"/><path d="M7 20c2-2 3-2 5 0M12 20c2-2 3-2 5 0"/>'
+});
+
+function mobilityIconSvg(classId,size=24){
+  const id=Object.prototype.hasOwnProperty.call(MOBILITY_ICON_INNER,classId)?classId:"jumper";
+  const px=Math.max(12,Math.min(96,Math.round(Number(size)||24)));
+  return `<svg class="mobilityIcon mobilityIcon-${id}" width="${px}" height="${px}" viewBox="0 0 24 24" role="img" aria-label="${MOBILITY_ICON_LABEL[id]}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${MOBILITY_ICON_INNER[id]}</svg>`;
+}
+
+function mobilityDrawLine(ctx,x1,y1,x2,y2){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();}
+function mobilityDrawChevron(ctx,x,y,width,height){ctx.beginPath();ctx.moveTo(x-width,y-height);ctx.lineTo(x,y);ctx.lineTo(x+width,y-height);ctx.stroke();}
+
+function mobilityDrawNinjaContact(ctx,x,y,w,h,dir,mode,t,reducedMotion){
+  const wallX=dir<0?x-2:x+w+2,tipX=wallX-dir*6;
+  ctx.strokeStyle="#f4f5f7";ctx.fillStyle="#e8324a";ctx.lineWidth=1.5;
+  const phase=reducedMotion?0:(t*18)%8;
+  for(let i=0;i<(reducedMotion?2:3);i++){
+    const tickY=y+8+((i*13+phase)%Math.max(16,h-10));
+    mobilityDrawLine(ctx,wallX,tickY,tipX,tickY+dir*(i%2?2:-2));
+  }
+  if(mode===MOBILITY_MODE_ID.wall_stick){
+    const handY=y+h*.32;ctx.globalAlpha=Math.min(ctx.globalAlpha,.86);
+    ctx.strokeStyle="#1b1b26";ctx.beginPath();ctx.arc(wallX-dir*1.5,handY,2.8,0,Math.PI*2);ctx.fill();ctx.stroke();
+    mobilityDrawLine(ctx,wallX-dir*4,handY,wallX-dir*9,handY+3);
+  }
+}
+
+function mobilityDrawJimoSteps(ctx,x,y,w,h,dir,t,reducedMotion){
+  const wallX=dir<0?x-3:x+w+3,count=reducedMotion?2:4,phase=reducedMotion?0:(t*26)%12;
+  ctx.lineWidth=1.6;
+  for(let i=0;i<count;i++){
+    ctx.strokeStyle=i%2?"#c7ccd6":"#697386";
+    const footY=y+h-6-((i*11+phase)%Math.max(20,h));
+    ctx.save();ctx.translate(wallX-dir*3,footY);ctx.rotate(dir*(i%2?-.42:.42));
+    ctx.beginPath();ctx.ellipse(0,0,2.3,4.2,0,0,Math.PI*2);ctx.stroke();ctx.restore();
+  }
+}
+
+function mobilityDrawTankHover(ctx,x,y,w,h,t,reducedMotion){
+  const bottom=y+h,length=reducedMotion?6:10+Math.sin(t*8)*2;
+  ctx.lineWidth=1.2;
+  ctx.fillStyle="#ffb23e";ctx.strokeStyle="#ffd27b";
+  ctx.beginPath();ctx.moveTo(x+w*.24,bottom-1);ctx.lineTo(x+w*.14,bottom+length);ctx.lineTo(x+w*.39,bottom+length*.7);ctx.closePath();ctx.fill();ctx.stroke();
+  ctx.fillStyle="#5dff8a";ctx.strokeStyle="#afffc5";
+  ctx.beginPath();ctx.moveTo(x+w*.76,bottom-1);ctx.lineTo(x+w*.61,bottom+length*.7);ctx.lineTo(x+w*.86,bottom+length);ctx.closePath();ctx.fill();ctx.stroke();
+}
+
+function mobilityDrawBlasterJet(ctx,x,y,w,h,dir,t,reducedMotion){
+  const rear=dir<0?x+w+2:x-2,reach=reducedMotion?7:13+Math.sin(t*12)*2;
+  ctx.fillStyle="#26dfff";ctx.strokeStyle="#b7f8ff";ctx.lineWidth=1.2;
+  ctx.beginPath();ctx.moveTo(rear,y+h*.42);ctx.lineTo(rear-dir*reach,y+h*.52);ctx.lineTo(rear,y+h*.62);ctx.closePath();ctx.fill();ctx.stroke();
+  if(!reducedMotion){ctx.globalAlpha*=.55;mobilityDrawLine(ctx,rear-dir*4,y+h*.52,rear-dir*(reach+5),y+h*.52);}
+}
+
+function mobilityDrawSkaterBoard(ctx,x,y,w,h,dir,t,reducedMotion){
+  const bottom=y+h+2,rear=dir<0?x+w:x,ribbon=reducedMotion?8:18+Math.sin(t*9)*3;
+  ctx.strokeStyle="#c16cff";ctx.lineWidth=2.2;mobilityDrawLine(ctx,x-3,bottom,x+w+3,bottom);
+  ctx.fillStyle="#b957ff";ctx.beginPath();ctx.arc(x+w*.25,bottom+3,2.3,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle="#64ff75";ctx.beginPath();ctx.arc(x+w*.75,bottom+3,2.3,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle="#80ff92";ctx.lineWidth=1.4;mobilityDrawLine(ctx,rear,bottom-1,rear-dir*ribbon,bottom-5);
+  if(!reducedMotion){
+    ctx.strokeStyle="#c16cff";mobilityDrawLine(ctx,rear-dir*3,bottom+2,rear-dir*(ribbon*.65),bottom+7);
+    ctx.strokeStyle="#64ff75";mobilityDrawLine(ctx,rear-dir*6,bottom+1,rear-dir*(ribbon*.9),bottom+3);
+  }
+}
+
+function mobilityDrawBuilderGrips(ctx,x,y,w,h,dir,t,reducedMotion){
+  const railX=dir<0?x-3:x+w+3,reach=dir<0?1:-1,phase=reducedMotion?0:Math.sin(t*7)*2;
+  ctx.strokeStyle="#ffd45b";ctx.lineWidth=1.6;mobilityDrawLine(ctx,railX,y+4,railX,y+h-2);
+  for(let i=0;i<3;i++){const gripY=y+10+i*12+phase*(i%2?1:-1);mobilityDrawLine(ctx,railX,gripY,railX+reach*8,gripY);}
+  ctx.fillStyle="#fff0a8";
+  ctx.beginPath();ctx.arc(railX+reach*5,y+h*.31,2.3,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(railX+reach*5,y+h*.58,2.3,0,Math.PI*2);ctx.fill();
+}
+
+function mobilityDrawWarlordDescent(ctx,x,y,w,h,t,reducedMotion){
+  ctx.strokeStyle="#ffad42";ctx.lineWidth=1.8;
+  const phase=reducedMotion?0:(t*20)%9,count=reducedMotion?1:3,cx=x+w/2;
+  for(let i=0;i<count;i++)mobilityDrawChevron(ctx,cx,y+h+7+i*8-phase,6,4);
+}
+
+function drawMobilityLandingFootprint(ctx,event,time,{reducedMotion=false,reducedFlash=false}={}){
+  if(!ctx||!event||event.classId!=="warlord"||event.abilityId!=="ground_pound"||event.phase!=="land")return false;
+  const explicitAge=Number(event.ageMs),startedAt=Number(event.startedAt);
+  const ageMs=Number.isFinite(explicitAge)?Math.max(0,explicitAge):Number.isFinite(startedAt)?Math.max(0,(Number(time)||0)-startedAt):0;
+  const durationMs=reducedMotion?260:440;
+  if(ageMs>durationMs)return false;
+  const x=Number.isFinite(Number(event.impactX))?Number(event.impactX):Number(event.x)||0;
+  const y=Number.isFinite(Number(event.impactY))?Number(event.impactY):Number(event.y)||0;
+  const fade=1-ageMs/durationMs;
+  ctx.save();ctx.globalAlpha*=Math.min(reducedFlash?.42:.68,Math.max(.12,fade));ctx.strokeStyle="#ffad42";ctx.lineWidth=1.6;ctx.lineCap="round";
+  // Quiet sole outlines identify the committed landing point. Damage radius and
+  // terrain effects remain in the existing authoritative impact VFX.
+  ctx.beginPath();ctx.ellipse(x-5,y+1,5,2.1,-.12,0,Math.PI*2);ctx.stroke();
+  ctx.beginPath();ctx.ellipse(x+5,y+1,5,2.1,.12,0,Math.PI*2);ctx.stroke();
+  ctx.restore();return true;
+}
+
+function drawMobilityTrail(ctx,e,time,{reducedMotion=false,reducedFlash=false}={}){
+  if(!ctx||!e)return false;
+  const mode=Number(e.mobilityMode)||0,classId=String(e.classId||e.cls||"");
+  if(mode===MOBILITY_MODE_ID.none)return false;
+  const x=Number(e.x)||0,y=Number(e.y)||0,w=Math.max(1,Number(e.w)||34),h=Math.max(1,Number(e.h)||44);
+  const rawDir=Number(e.mobilityDir),dir=rawDir===-1?-1:rawDir===1?1:(Number(e.face)<0?-1:1);
+  const t=(Number(time)||0)/1000;
+  ctx.save();ctx.globalAlpha*=reducedFlash?.62:.82;ctx.lineCap="round";ctx.lineJoin="round";
+  let drawn=true;
+  if(classId==="ninja"&&(mode===MOBILITY_MODE_ID.wall_run||mode===MOBILITY_MODE_ID.wall_stick))mobilityDrawNinjaContact(ctx,x,y,w,h,dir,mode,t,reducedMotion);
+  else if(classId==="jimo"&&mode===MOBILITY_MODE_ID.wall_run)mobilityDrawJimoSteps(ctx,x,y,w,h,dir,t,reducedMotion);
+  else if(classId==="tank"&&mode===MOBILITY_MODE_ID.hover)mobilityDrawTankHover(ctx,x,y,w,h,t,reducedMotion);
+  else if(classId==="blaster"&&mode===MOBILITY_MODE_ID.jet_burst)mobilityDrawBlasterJet(ctx,x,y,w,h,dir,t,reducedMotion);
+  else if(classId==="skater"&&(mode===MOBILITY_MODE_ID.board_rush||mode===MOBILITY_MODE_ID.rail_grind))mobilityDrawSkaterBoard(ctx,x,y,w,h,dir,t,reducedMotion);
+  else if(classId==="builder"&&mode===MOBILITY_MODE_ID.build_climb)mobilityDrawBuilderGrips(ctx,x,y,w,h,dir,t,reducedMotion);
+  else if(classId==="warlord"&&mode===MOBILITY_MODE_ID.ground_pound_armed)mobilityDrawWarlordDescent(ctx,x,y,w,h,t,reducedMotion);
+  else drawn=false;
+  ctx.restore();return drawn;
+}
+
+// Inlined after the shared simulation contract. Offline glue preserves the
+// existing local world, input, and combat systems; it never drives online actors.
+const CLIENT_MOBILITY_KEYS=Object.freeze(Object.keys(makeMobilityState("jumper",false)));
+let localMobilityActorSeq=0;
+let localMobilityBuildSeq=0;
+function clientMobilityState(e){
+  const defaults=makeMobilityState(e.classId||e.cls,false),state={};
+  for(const key of CLIENT_MOBILITY_KEYS)state[key]=e[key]===undefined?defaults[key]:e[key];
+  return state;
+}
+function applyClientMobility(e,state){for(const key of CLIENT_MOBILITY_KEYS)if(state[key]!==undefined)e[key]=state[key];}
+function offlineMobilityLocked(e,weapon=false){
+  const mode=e?.mobilityMode||0;
+  if(e?.jimoWallAscentLock||[MOBILITY_MODE.WALL_RUN,MOBILITY_MODE.WALL_STICK,MOBILITY_MODE.BUILD_CLIMB,MOBILITY_MODE.GROUND_POUND_ARMED].includes(mode))return true;
+  if(mode)return !weapon&&(mode===MOBILITY_MODE.HOVER||mode>=MOBILITY_MODE.JET_BURST);
+  // Input actions run before local collision. Honor the mode this input will
+  // enter so holding fire cannot sneak a shot into the first climbing frame.
+  if(!e||(NET.active&&!G.warmup)||!["player","bot"].includes(e.kind)||!e.alive||e.gliding||e.riding||e.car||e.zipping||e.ledge||e.grapple||e.stunT>0)return false;
+  const input=e.kind==="bot"?offlineBotMobilityInput(e):(e.mobilityInput||{}),state=clientMobilityState(e);
+  const context={alive:true,onGround:!!e.onGround,downed:!!e.downed,authoredLadder:!!e.climbing,wallContact:offlineWallContact(e,horizontalIntent(input)),ceilingBlocked:offlineCeilingBlocked(e),bodyHeight:e.h,playerId:e.id,vy:e.vy,tickDelta:0};
+  const plan=e.cls==="ninja"||e.cls==="jimo"?planWallMobility(state,e.cls,input,context):e.cls==="builder"?planBuilderClimb(state,input,context):e.cls==="tank"?planTankHover(state,input,context):null;
+  return !!plan?.combatLocked&&(!weapon||!plan.weaponAllowed);
+}
+function offlineCancelMobility(e,clearSequence=true){
+  const state=clientMobilityState(e);state.dashTicksRemaining=0;state.groundPoundArmed=false;
+  if(clearSequence)state.jimoWallAscentLock=false;
+  applyClientMobility(e,transitionMobility(state,MOBILITY_MODE.NONE));
+}
+function offlineWallContact(e,axis){
+  if(!axis)return null;
+  const dir=Math.sign(axis),edge=dir>0?e.x+e.w:e.x;
+  const contact=shape=>{
+    if(shape.gone||shape.oneWay||shape.bldg||shape.room||shape.carOnly||shape.hp!==undefined&&shape.hp<=0)return null;
+    const face=dir>0?shape.x:shape.x+shape.w,overlapY=Math.min(e.y+e.h,shape.y+shape.h)-Math.max(e.y,shape.y);
+    if(Math.abs(edge-face)>.8)return null;
+    const candidate={dir,solid:true,live:true,faceHeight:shape.h,overlapY,ownerId:shape.owner??null,buildId:shape.id??null};
+    return qualifyingWallContact(candidate,e.h)?candidate:null;
+  };
+  for(const shape of PLATS){const c=contact(shape);if(c)return c;}
+  for(const shape of G.builds||[]){if(shape.solid===false)continue;const c=contact(shape);if(c)return c;}
+  for(const shape of BLDG_SOLIDS){const c=contact(shape);if(c)return c;}
+  return null;
+}
+function offlineBotMobilityInput(e){
+  const target=e.ai?.target||e.ai?.hunt;
+  const above=Number.isFinite(target?.y)&&target.y+Number(target.h||0)<e.y-30;
+  const direction=Math.sign(e.vx)||(above?Math.sign((target.x||0)-e.x):0);
+  const landingAim=Number.isFinite(target?.y)&&target.y>e.y+80&&Math.abs(target.x-e.x)>100;
+  return {ax:direction,left:direction<0,right:direction>0,up:above,climb:above?-1:0,jump:false,
+    jumpHeld:!e.onGround&&(above&&["ninja","jimo"].includes(e.cls)||e.cls==="tank"&&landingAim&&e.vy>=0)};
+}
+function offlineCeilingBlocked(e){
+  if(e.y<=.01)return true;
+  const blocks=p=>!p.gone&&!p.oneWay&&!p.carOnly&&p.solid!==false&&!(p.hp!==undefined&&p.hp<=0)&&
+    e.x+e.w>p.x&&e.x<p.x+p.w&&Math.abs(e.y-(p.y+p.h))<.8;
+  return PLATS.some(blocks)||(G.builds||[]).some(blocks)||BLDG_SOLIDS.some(blocks);
+}
+function offlineMobilityFrameLimit(e,dt){
+  const key=({1:e.cls==="ninja"?"ninjaRunTicksRemaining":null,2:"ninjaStickTicksRemaining",3:"tankHoverFuelTicks",4:"builderClimbFuelTicks"})[e.mobilityMode]||
+    (e.mobilityMode>=MOBILITY_MODE.JET_BURST?"dashTicksRemaining":null);
+  const remaining=key?Number(e[key])/MOBILITY_TICK_RATE:dt;
+  return remaining>1e-7&&remaining<dt-1e-7?remaining:dt;
+}
+function offlineMobilityBegin(e,dt){
+  if((e.kind!=="player"&&e.kind!=="bot")||NET.active&&!G.warmup)return null;
+  if(e.mobilityMode===undefined)applyClientMobility(e,makeMobilityState(e.cls,false));
+  const input=e.kind==="bot"?offlineBotMobilityInput(e):(e.mobilityInput||{}),axis=horizontalIntent(input);
+  const blocked=!e.alive||e.downed||e.gliding||e.riding||e.car||e.zipping||e.grapple||e.tubing||e.ledge||e.climbing||e.stunT>0||e.chargeCast||e.bull||orientationShouldGate();
+  if(blocked){offlineCancelMobility(e);return null;}
+  const wallContact=offlineWallContact(e,axis),state=clientMobilityState(e);
+  const context={alive:e.alive,downed:e.downed,onGround:e.onGround,authoredLadder:e.climbing,wallContact,bodyHeight:e.h,
+    playerId:e.id,vy:e.vy,tickDelta:mobilityTickDelta(dt),ceilingBlocked:offlineCeilingBlocked(e)};
+  let plan={state,verticalVelocity:null,horizontalMultiplier:1};
+  if(state.dashTicksRemaining>0)plan=planDashMobility(state,e.cls,context);
+  else if(state.groundPoundArmed)plan=planGroundPound(state);
+  else if(e.cls==="ninja"||e.cls==="jimo")plan=planWallMobility(state,e.cls,input,context);
+  else if(e.cls==="tank")plan=planTankHover(state,input,context);
+  else if(e.cls==="builder")plan=planBuilderClimb(state,input,context);
+  applyClientMobility(e,plan.state);
+  const before={input,axis,plan,mode:e.mobilityMode,x:e.x,y:e.y,vy:e.vy,ceilingHit:false,landed:false,obstacleHit:false,dt};
+  if(Number.isFinite(plan.horizontalVelocity))e.vx=plan.horizontalVelocity;
+  else if(Number.isFinite(plan.horizontalMultiplier)&&plan.horizontalMultiplier!==1)e.vx=axis*CLASSES[e.cls].speed*(e.spdMul||1)*plan.horizontalMultiplier;
+  if(Number.isFinite(plan.verticalVelocity))e.vy=plan.verticalVelocity;
+  e.mobilityFrame=before;
+  return before;
+}
+function offlineDashSweep(e,dx){
+  const start=e.x,dir=Math.sign(dx);let end=clamp(start+dx,4,W-e.w-4),hit=end!==start+dx;
+  const inspect=shape=>{
+    if(shape.gone||shape.oneWay||shape.bldg||shape.carOnly||shape.solid===false||shape.hp!==undefined&&shape.hp<=0||e.y+e.h<=shape.y||e.y>=shape.y+shape.h)return;
+    if(dir>0&&start+e.w<=shape.x+.01&&end+e.w>=shape.x){end=Math.min(end,shape.x-e.w);hit=true;}
+    if(dir<0&&start>=shape.x+shape.w-.01&&end<=shape.x+shape.w){end=Math.max(end,shape.x+shape.w);hit=true;}
+  };
+  for(const shape of PLATS)inspect(shape);
+  for(const shape of G.builds||[])inspect(shape);
+  for(const shape of BLDG_SOLIDS)inspect(shape);
+  return {x:end,hit,dir};
+}
+function offlineMobilityFinish(e,frame){
+  if(!frame)return;
+  const contact=offlineWallContact(e,frame.axis),contactValid=!!contact;
+  const result={elapsedTickDelta:e.mobilityDamageInterrupted?0:mobilityTickDelta(frame.dt),tickDelta:frame.plan.activeTickDelta??mobilityTickDelta(frame.dt),landed:frame.landed,descending:frame.vy>=0||e.y>frame.y,
+    vy:e.vy,ceilingHit:frame.ceilingHit,contactValid,jumpHeld:!!frame.input.jumpHeld,intoWall:contactValid&&frame.axis*contact.dir>.15,
+    movementApplied:!frame.ceilingHit,obstacleHit:frame.obstacleHit||e.blockedX,transport:!!(e.gliding||e.riding||e.car||e.zipping||e.tubing),
+    dead:!e.alive,downed:!!e.downed,stunned:e.stunT>0};
+  let state=clientMobilityState(e);
+  if(frame.mode>=MOBILITY_MODE.JET_BURST){
+    state=finishDashMobilityTick(state,result);
+    if(!state.dashTicksRemaining)e.vx=frame.axis*CLASSES[e.cls].speed*(e.spdMul||1);
+  }else if(e.groundPoundArmed){
+    const end=finishGroundPoundTick(state,result);state=end.state;
+    applyClientMobility(e,state);
+    if(end.impact)offlineGroundPoundImpact(e);
+  }else if(e.cls==="ninja"||e.cls==="jimo")state=finishWallMobilityTick(state,e.cls,result);
+  else if(e.cls==="tank")state=finishTankHoverTick(state,result);
+  else if(e.cls==="builder")state=finishBuilderClimbTick(state,result);
+  applyClientMobility(e,state);
+  if(result.transport)offlineCancelMobility(e);
+  e.mobilityDamageInterrupted=false;
+  e.mobilityFrame=null;
+}
+function offlineStartDash(e,mode,dir=e.face){
+  const result=startDashMobility(clientMobilityState(e),e.cls,mode,dir);
+  if(!result.accepted)return false;
+  applyClientMobility(e,result.state);
+  if(Number.isFinite(result.initialVerticalVelocity)){e.vy=Math.min(e.vy,result.initialVerticalVelocity);e.onGround=false;e.coyoteT=0;}
+  e.iframes=result.iframeTicks/MOBILITY_TICK_RATE;
+  return true;
+}
+function offlineMobilityDamage(e){
+  if(e.kind!=="player"&&e.kind!=="bot")return;
+  if(!e.alive||e.downed||e.hp<=0){offlineCancelMobility(e);return;}
+  if((e.cls==="ninja"||e.cls==="jimo")&&([MOBILITY_MODE.WALL_RUN,MOBILITY_MODE.WALL_STICK].includes(e.mobilityMode)||e.jimoWallAscentLock)){applyClientMobility(e,finishWallMobilityTick(clientMobilityState(e),e.cls,{damageInterrupted:true,vy:e.vy,tickDelta:0,elapsedTickDelta:0}));e.mobilityDamageInterrupted=true;}
+  else if(e.cls==="builder")applyClientMobility(e,finishBuilderClimbTick(clientMobilityState(e),{damageInterrupted:true,tickDelta:0}));
+}
+
+function drawMobilityHUD(p){
+  if(touchUIActive()||!p?.alive||p.gliding||p.riding)return;
+  const state=NET.active&&!G.warmup?(NET.privateState||p):p,mode=p.mobilityMode||0;
+  let label="",remaining=0,total=1;
+  if(p.cls==="ninja"){label=mode===2?"WALL STICK":"WALL RUN";remaining=mode===2?state.ninjaStickTicksRemaining:state.ninjaRunTicksRemaining;total=mode===2?7:14;}
+  else if(p.cls==="tank"){label="HOVER";remaining=state.tankHoverFuelTicks;total=25;}
+  else if(p.cls==="builder"){label="BUILD CLIMB";remaining=state.builderClimbFuelTicks;total=20;}
+  else if(p.cls==="jimo"&&mode===1){label="WALL RUN · HOLD";remaining=1;}
+  else if(p.cls==="warlord"&&state.groundPoundArmed){label="SLAM ON LANDING";remaining=1;}
+  else return;
+  const x=VIEW_W-168,y=VIEW_H-153,w=150,ratio=clamp((Number(remaining)||0)/total,0,1);
+  ctx.save();panel(x,y,w,28);ctx.textAlign="left";ctx.font="bold 11px 'Rajdhani'";ctx.fillStyle=ratio?"#eaf2ff":"#b4c4e1";
+  ctx.fillText(label+(ratio===0?" · LAND":""),x+7,y+13);ctx.fillStyle="rgba(255,255,255,.12)";ctx.fillRect(x+7,y+20,w-14,3);
+  ctx.fillStyle=CLASSES[p.cls].c;ctx.fillRect(x+7,y+20,(w-14)*ratio,3);ctx.restore();
+}
+
+function mobilityEntrySound(classId,mode,volume=.25){
+  const sound=mode===MOBILITY_MODE.WALL_RUN?"footstep_2":mode===MOBILITY_MODE.WALL_STICK?"footstep_3":mode===MOBILITY_MODE.BUILD_CLIMB?"build_place":mode===MOBILITY_MODE.HOVER?"glider_open":null;
+  if(sound)playSfx(sound,{vol:volume});
+}
+
+function offlineGroundPoundImpact(e){
+  const c=CLASSES[e.cls];
+const cx=e.x+e.w/2, cy=e.y+e.h;
+    e.mobilityLandingFx={classId:"warlord",abilityId:"ground_pound",phase:"land",impactX:cx,impactY:cy,startedAt:G.t*1000};
+    if(e===G.player)playSfx("boom_big",{vol:.52});
+    for(const t of G.ents){ if(!t.alive||t===e) continue;
+      const d=dist(t.x+t.w/2,t.y+t.h/2,cx,cy);
+      if(d<150){ applyDamage(t, 12+26*(1-d/150), e); t.vx+=(Math.sign((t.x-e.x))||1)*260; t.vy=Math.min(t.vy,-280); t.onGround=false; abilityHit(t.x+t.w/2,t.y+t.h/2,"#ff7a1a"); } }
+    try{ carveTerrain(cx, cy+8, 30); }catch(_e){}
+    if(G.shakeOn) G.shake=Math.min(16,(G.shake||0)+8);
+    if(G.rings) G.rings.push({ x:cx, y:cy, r:10, t:0.4, c:c.c2, sp:520, lw:5 });
+    for(let k=0;k<26 && G.parts.length<600;k++){ const ga=Math.PI+Math.random()*Math.PI;
+      G.parts.push({ x:cx+rand(-44,44), y:cy, vx:Math.cos(ga)*rand(90,340), vy:rand(-180,-20), life:rand(0.4,0.85), color:k%3?"#c9b79a":c.c2, r:rand(2,5), smoke:k%2 }); }
+    if(G.rings) G.rings.push({ x:cx, y:cy, r:6, t:0.28, c:"#fff2c0", sp:660, lw:3 });
+    if(e===G.player){ if(G.shakeOn) G.shake=Math.min(22,(G.shake||0)+6); if(!G.reducedFlash) G.flashT=Math.max(G.flashT||0,0.06); }
+}
+// END INLINED MOBILITY CONTRACT
+
+function classMobilityHint(id,forcePad){
+  const usePad=forcePad===undefined?padActive():forcePad,glyphs=PAD_GLYPHS[controllerFamily()==="ps"?"ps":"xbox"],jump=usePad?glyphs.W:"SPACE / W",ability=usePad?glyphs.Q:"Q";
+  return ({
+    jumper:"↑ + "+ability+" in air · recover, then land a wave",
+    blaster:ability+" · short jet launch",
+    ninja:"Hold "+jump+" into wall · run, then cling",
+    builder:"Hold ↑ on your own wall · climb",
+    tank:"Hold "+jump+" after apex · hover",
+    skater:ability+" board rush · ↑ + "+ability+" rail leap",
+    mage:"Aim + "+ability+" · blink to clear space",
+    demolitionist:"↑ + "+ability+" · launch and shockwave",
+    jimo:"Hold "+jump+" into wall · continuous run",
+    warlord:"Grounded ↑ + "+ability+" · leap, then slam"
+  })[id]||"";
+}
 
 // Win-gated character unlocks (offline uses CAREER wins). Jimo @10 wins, Warlord @25 wins.
 const CLASS_UNLOCKS = { jimo:10, warlord:25 };
@@ -2309,26 +3072,28 @@ const MUSIC=(()=>{
 /* ---------------- MUSICFILES: mastered track loader (optional; procedural MUSIC is the fallback) ---------------- */
 const MUSICFILES=(()=>{
   const KEYS=["menu","drop","match","storm","victory","defeat","shop"];
-  const bufs={}, pending={};
+  const bufs={}, pending={}, retryAfter={};
   let ctx=null;
   function ac(){ if(!ctx){ try{ ctx=RR_AUDIO_CONTEXT.get(); }catch(e){} } return ctx; }
   function load(k){
     if(typeof window==="undefined"||typeof fetch!=="function") return;          // Node/smoke harness: no-op
-    if(!KEYS.includes(k)||bufs[k]||pending[k]) return;
+    if(!KEYS.includes(k)||bufs[k]||pending[k]||Date.now()<(retryAfter[k]||0)) return;
     const c=ac(); if(!c) return;
     pending[k]=1;
+    const failed=()=>{delete pending[k];retryAfter[k]=Date.now()+30000;};
     const src=(window.EMBEDDED_MUSIC && window.EMBEDDED_MUSIC[k]) || ("assets/music_"+k+".mp3");
     rrAudioEvent("music", {action:"load", track:k});
     try{
-      fetch(src).then(r=>r.ok?r.arrayBuffer():Promise.reject(0))
+      fetch(src,{priority:"low"}).then(r=>r.ok?r.arrayBuffer():Promise.reject(0))
         .then(ab=>new Promise((res,rej)=>{ const pr=c.decodeAudioData(ab,res,rej); if(pr&&pr.then) pr.then(res,rej); }))
-        .then(b=>{ bufs[k]=b; delete pending[k]; })
-        .catch(()=>{ delete pending[k]; });                                      // missing/undecodable: synth loop stays
-    }catch(e){ delete pending[k]; }
+        .then(b=>{ bufs[k]=b; delete pending[k]; delete retryAfter[k]; })
+        .catch(failed);                                                          // missing/undecodable: synth loop stays
+    }catch(e){ failed(); }
   }
-  // the menu bed decodes first (title screen); the full set streams in after the page settles
+  // Decode only the menu bed up front. MSTATE requests the current track on demand;
+  // unused soundtrack downloads must not compete with a player's first match.
   if(typeof window!=="undefined"&&typeof fetch==="function"){
-    try{ load("menu"); setTimeout(()=>{ for(const k of KEYS) load(k); },3500); }catch(e){}
+    try{ load("menu"); }catch(e){}
   }
   return { ac, has:k=>!!bufs[k], get:k=>bufs[k]||null, load };
 })();
@@ -2416,7 +3181,10 @@ const MSTATE=(()=>{
         rrAudioEvent("music", {action:"track_change", from:cur, to:want});
         shotDone=false; cur=want; if(on&&!switchTo(want)) MUSICFILES.load(want);
       }
-      else if(on&&!chA&&!shotDone&&MUSICFILES.has(cur)) switchTo(cur);   // buffer arrived late: fade it in
+      else if(on&&(!chA||chA.key!==cur)&&!shotDone){
+        if(MUSICFILES.has(cur)) switchTo(cur);   // buffer arrived late: fade it in
+        else MUSICFILES.load(cur);             // music enabled after the state changed
+      }
       // ---- audio below is browser-only (no AudioContext in the QA harness) ----
       const c=ctx(); if(!c) return; const m=mg(); if(!m) return;
       if(!on){ stopCh(chA); stopCh(chB); chA=chB=null; try{ m.gain.value=0; }catch(e){} return; }
@@ -2533,7 +3301,7 @@ function contractsHtml(compact=false){
    completed game actions, never timers, so prompts cannot teach phantom inputs. */
 const ONBOARD_STEPS=[
   {id:"move_jump", k:"FIELD TRAINING 1/3", kb:"MOVE WITH A/D · JUMP WITH W OR SPACE", pad:"MOVE WITH L STICK · JUMP WITH A/✕", c:"#00d9ff"},
-  {id:"crate", k:"FIELD TRAINING 2/3", kb:"FIND A CRATE · PRESS E TO OPEN", pad:"FIND A CRATE · PRESS B/○ TO OPEN", c:"#ffb000"},
+  {id:"crate", k:"FIELD TRAINING 2/3", kb:"FIND A FIREARM · E OPENS CRATES / PICKS UP", pad:"FIND A FIREARM · B/○ OPENS CRATES / PICKS UP", c:"#ffb000"},
   {id:"fire", k:"FIELD TRAINING 3/3", kb:"PICK UP A FIREARM · FIRE WITH CLICK OR J", pad:"PICK UP A FIREARM · FIRE WITH RT", c:"#ff4d7d"}
 ];
 const CONTEXT_TIPS={
@@ -2544,13 +3312,14 @@ const CONTEXT_TIPS={
 };
 const ONBOARD={active:false,step:0,flags:{},flash:0,tipNow:null,tipSeen:{},
   reset(){ const cs=CAREER.load(); this.active=!cs.o; this.step=0; this.flags={}; this.flash=0; this.tipNow=null; this.tipSeen={}; },
-  event(id){ if(!this.active||G.warmup) return false;
-    const s=ONBOARD_STEPS[this.step]; if(!s) return false;
-    if(s.id==="move_jump"){
-      if(id==="move") this.flags.move=1; if(id==="jump") this.flags.jump=1;
-      if(!(this.flags.move&&this.flags.jump)) return false;
-    } else if(id!==s.id) return false;
-    this.step++; this.flash=0.55;
+  event(id){ if(!this.active||G.warmup||!["move","jump","crate","fire"].includes(id)) return false;
+    this.flags[id]=1;const previous=this.step;
+    while(this.step<ONBOARD_STEPS.length){
+      const s=ONBOARD_STEPS[this.step];
+      if(s.id==="move_jump"?!(this.flags.move&&this.flags.jump):!this.flags[s.id])break;
+      this.step++;
+    }
+    if(this.step===previous)return false;this.flash=0.55;
     if(this.step>=ONBOARD_STEPS.length){ this.active=false; CAREER.finishOnboarding(false); toast("★ FIELD TRAINING COMPLETE"); }
     else { const n=ONBOARD_STEPS[this.step]; toast("◆ TRAINING UPDATED — "+n.k.split(" ").slice(-1)[0]); }
     return true;
@@ -2581,9 +3350,10 @@ function refreshCareer(){
 /* ---------------- Canvas ---------------- */
 const cv = document.getElementById("cv");
 const ctx = cv.getContext("2d");
-let scale=1, offX=0, offY=0, DPR=Math.min(window.devicePixelRatio||1, 2);
+let scale=1, offX=0, offY=0, canvasCssTop=0, DPR=Math.min(window.devicePixelRatio||1, 2);
 function resize(){
   const r=document.getElementById("game").getBoundingClientRect();
+  canvasCssTop=r.top;
   cv.width=Math.floor(r.width*DPR); cv.height=Math.floor(r.height*DPR);
   cv.style.width=r.width+"px"; cv.style.height=r.height+"px";
   scale=Math.min(cv.width/VIEW_W, cv.height/VIEW_H);
@@ -2682,6 +3452,10 @@ function syncPresentationState(){
   const state=hudPresentationState(),gated=orientationShouldGate();
   for(const name of ["transit","descending","landed-unarmed","armed","ghost"])document.body.classList.toggle("hud-"+name,state===name);
   document.body.classList.toggle("orientationGated",gated);
+  if(state==="armed"||state==="landed-unarmed"){
+    const bottom=Math.ceil(combatHudLayout(G.player).toastBottomCss)+"px";
+    if(document.body.style.getPropertyValue("--combat-toast-bottom")!==bottom)document.body.style.setProperty("--combat-toast-bottom",bottom);
+  }
   const gate=document.getElementById("orientationGate");if(gate)gate.setAttribute("aria-hidden",String(!gated));
   const status=document.getElementById("orientationStatus");if(status)status.textContent=typeof NET!=="undefined"&&(NET.rawActive||NET.active)?(NET.connected?"ONLINE · CONNECTED · ROOM "+(NET.room||"—"):"ONLINE · RECONNECTING…"):G.warmup==="queue"?"ONLINE QUEUE · WARM-UP ACTIVE":"OFFLINE · MATCH ACTIVE";
   if(gated)clearGameplayInput();
@@ -2732,7 +3506,7 @@ function hydratePreferredRiotTag(profileName){
 function onlineSelfTag(){
   return String(NET?.sessionName||NET?.snapshot?.players?.find?.(p=>p.id===NET.id)?.name||NET?.rosterMeta?.get?.(NET.id)?.name||NET?.profile?.name||currentRiotTag());
 }
-const ONLINE_PROTOCOL=8,ONLINE_BUILD="2026.08.30-update-1343";
+const ONLINE_PROTOCOL=9,ONLINE_BUILD="2026.09.04-mobility-01";
 // The controlled online-alpha client and authoritative WebSocket service share
 // this canonical endpoint. The query-string override remains available for QA.
 const NET_DEFAULT_SERVER="wss://rungun.45-32-229-199.sslip.io";
@@ -2869,7 +3643,7 @@ function netAbilityFeedback(event,now=netNow()){
   const point=netAbilityPoint(event,impact?"impactX":"x",impact?"impactY":"y",Number(event.x)||0,Number(event.y)||0),distance=player?Math.hypot(point.x-(player.x+player.w/2),point.y-(player.y+player.h/2)):0;if(!local&&player&&distance>1300)return;
   NET.abilitySfxTimes=NET.abilitySfxTimes.filter(time=>now-time<240);if((local||NET.abilitySfxTimes.length<5)&&(!impact||NET.abilitySfxTimes.length<7)){NET.abilitySfxTimes.push(now);const heavy=/mega_|ground_pound|rocket_jump|bull_rush/.test(kind),flame=kind==="flame_breath";if(impact&&heavy){if(!playSfx("boom_big",{vol:local ? .68 : clamp(.58-distance/2600,.14,.5)}))SFX.hit();}else if(impact){if(!playSfx(flame?"shot_cannon":"melee_hit",{vol:local ? .5 : clamp(.38-distance/3300,.1,.32)}))SFX.hit();}else if(local)SFX.ability();}
   if(!impact||!player||distance>1050)return;const heavy=/mega_|ground_pound|rocket_jump|bull_rush|charge_cannon/.test(kind),weight=heavy?1.8:/dash_slash|spin_dash|flame_breath/.test(kind)?1.15:.75,attenuation=clamp(1-distance/1050,.12,1),strength=weight*attenuation,dir=netAbilityDirection(event);
-  if(G.shakeOn&&!PREFS.get("reducedMotion"))G.shake=Math.min(20,(G.shake||0)+4.5*strength);G.kickX=(G.kickX||0)-dir.x*2.8*strength;G.kickY=(G.kickY||0)-Math.max(.35,Math.abs(dir.y))*2.2*strength;if(local)G.hitT=Math.max(G.hitT||0,.08+.04*strength);if(heavy&&distance<520&&!G.reducedFlash&&!PREFS.get("reducedFlash"))G.flashT=Math.max(G.flashT||0,.035);
+  if(G.shakeOn&&!PREFS.get("reducedMotion"))G.shake=Math.min(20,(G.shake||0)+4.5*strength);if(!PREFS.get("reducedMotion")){G.kickX=(G.kickX||0)-dir.x*2.8*strength;G.kickY=(G.kickY||0)-Math.max(.35,Math.abs(dir.y))*2.2*strength;}if(local)G.hitT=Math.max(G.hitT||0,.08+.04*strength);if(heavy&&distance<520&&!G.reducedFlash&&!PREFS.get("reducedFlash"))G.flashT=Math.max(G.flashT||0,.035);
 }
 function netDecodeAbilityEvent(source){
   if(!Array.isArray(source))return source;
@@ -2892,6 +3666,9 @@ function netTrackSnapshotPlayers(players=[]){
   for(const player of players){
     if(!player?.id)continue;live.add(player.id);
     const state=netActorVisual(player.id),hp=Number(player.hp),shield=Number(player.shield);
+    const mobilitySeq=Number(player.mobilitySeq)||0;
+    if(Number.isSafeInteger(state.lastMobilitySeq)&&mobilitySeq>state.lastMobilitySeq){const distance=G.player?Math.hypot(player.x-G.player.x,player.y-G.player.y):Infinity;if(distance<700)mobilityEntrySound(player.classId,player.mobilityMode,player.id===NET.id?.25:.18*(1-distance/700));}
+    state.lastMobilitySeq=mobilitySeq;
     if(Number.isFinite(hp)&&state.lastHp!==null&&hp<state.lastHp-.01)state.hurtUntil=Math.max(state.hurtUntil,now+180);
     if(Number.isFinite(shield)&&state.lastShield!==null&&shield<state.lastShield-.01)state.hurtUntil=Math.max(state.hurtUntil,now+140);
     if(Number.isFinite(hp))state.lastHp=hp;if(Number.isFinite(shield))state.lastShield=shield;
@@ -2946,7 +3723,7 @@ function netRemoteEntity(player){
   const weapons=Array.isArray(player.weapons)&&player.weapons.some(Boolean)?player.weapons:(state?.weaponId?[state.weaponId]:[]);
   const wi=weapons===player.weapons?(Number(player.wi)||0):0;
   return {
-    kind:"netremote",netId:player.id,cls:clsId,name:player.name||cl.name,color:cl.c,color2:cl.c2,
+    kind:"netremote",netId:player.id,cls:clsId,mobilityMode:player.mobilityMode||0,mobilityDir:player.mobilityDir||0,mobilitySeq:player.mobilitySeq||0,name:player.name||cl.name,color:cl.c,color2:cl.c2,
     bot:!!player.bot,
     x:Number(player.x)||0,y:Number(player.y)||0,w:megaActive?61:(Number(player.w)||34),h:megaActive?79:(Number(player.h)||44),sizeMul:megaActive?1.8:1,pu:megaActive?{id:"mega",t:null}:null,
     vx:Number(player.vx)||0,vy:Number(player.vy)||0,face,onGround:!!player.onGround,climbing:!!player.climbing,
@@ -3078,6 +3855,8 @@ function netDrawAbilityVisual(entry,now,reduced,lowFlash){
     ctx.fillStyle="rgba(255,82,18,.23)";ctx.beginPath();ctx.moveTo(origin.x,origin.y);ctx.arc(origin.x,origin.y,length,a-spread,a+spread);ctx.closePath();ctx.fill();
     for(let i=0;i<count;i++){const q=.18+netFxRand(event.seed,i)*.82,off=(netFxRand(event.seed,i+19)-.5)*spread*2*q,x=origin.x+Math.cos(a+off)*length*q,y=origin.y+Math.sin(a+off)*length*q,rr=3+7*(1-q);ctx.fillStyle=i%3?"#ff7a1a":white;ctx.shadowColor="#ff4a12";ctx.shadowBlur=reduced?2:12;ctx.beginPath();ctx.arc(x,y,rr,0,Math.PI*2);ctx.fill();}
   }else if(kind==="ground_pound"||kind==="mega_stomp"||kind==="mega_air_spike"){
+    if(kind==="ground_pound"&&!hit){ctx.restore();return;}
+    if(kind==="ground_pound"&&phase==="land")drawMobilityLandingFootprint(ctx,{...event,ageMs:age*1000},now,{reducedMotion:reduced,reducedFlash:lowFlash});
     const center=hit&&hasImpact?impact:origin,mega=kind.startsWith("mega_"),r=(mega?22:14)+(mega?125:90)*k;
     netDrawRing(center.x,center.y,r,mega?"#ffe066":"#ff7a1a",reduced?3:mega?8:6,fade);netDrawRing(center.x,center.y,r*.62,white,3,fade*.9);
     const cracks=reduced?4:mega?14:9;for(let i=0;i<cracks;i++){const a=Math.PI+(i+1)*Math.PI/(cracks+1)+(netFxRand(event.seed,i)-.5)*.16,len=r*(.55+netFxRand(event.seed,i+21)*.55);netStrokeLine(center.x,center.y,center.x+Math.cos(a)*len,center.y+Math.sin(a)*len,mega&&i%2?"#ff3dff":"#ffd166",mega?4:3,fade);}
@@ -3264,6 +4043,7 @@ function netPlayWeaponSfx(event,now=netNow()){
 function netWeaponFireFeedback(event,dir){
   const player=G.player;if(!NET.active||G.warmup||!player)return false;
   const wpn=WEAPONS[event.weaponId];if(!wpn||wpn.melee)return false;
+  if(event.actorId===NET.id)ONBOARD.event("fire");
   const an=weaponAnim(wpn),kk=2.6*clamp(.6+(an.kick||0)*.12,.6,1.9);
   if(!PREFS.get("reducedMotion")){G.kickX=-dir.x*kk;G.kickY=-dir.y*kk;}
   if(G.shakeOn&&!PREFS.get("reducedMotion"))G.shake=Math.min(6,(G.shake||0)+.7);
@@ -3347,7 +4127,7 @@ function netWeaponHitFeedback(event,now=netNow()){
   G.hitKill=(NET.hitKillUntil||0)>now;   // a kill confirmed from the same snapshot keeps the gold marker
   G.hitHead=headshot&&!G.hitKill;        // a kill marker outranks the headshot marker
   if(G.shakeOn&&!PREFS.get("reducedMotion"))G.shake=Math.min(10,(G.shake||0)+1.5*weight);
-  G.kickX=(G.kickX||0)-dir.x*1.4*weight;G.kickY=(G.kickY||0)-dir.y*1.4*weight;
+  if(!PREFS.get("reducedMotion")){G.kickX=(G.kickX||0)-dir.x*1.4*weight;G.kickY=(G.kickY||0)-dir.y*1.4*weight;}
   if(!PREFS.get("reducedMotion"))G.hitstopRender=Math.max(G.hitstopRender||0,Math.min(.020,.004+nominal*.0004));   // same curve as offline: pistol ~8ms, rocket/sniper ~20ms
   /* ONLINE DAMAGE NUMBERS: same pool, same colour tiers and same 40-entry cap as the
      offline applyDamage() push, placed at the server's own impact point. Headshots get
@@ -3814,7 +4594,7 @@ function netGhostSignatureProbe(options={}){
 // Movement-only prediction mirrors multiplayer/world.js at the authoritative
 // fixed 20 Hz. Combat, inventory, and special traversal are never replayed.
 const NET_STEP=1/20,NET_EMOTE_TTL=1.8,NET_ACTIONS=["interact","reload","ability","heal","shield","throwable","build","trap","pad","nano","field","emote"];
-const NET_GLIDE_SPEC={openGravity:320,cutGravity:640,openMaxFallSpeed:220,cutMaxFallSpeed:340,fastCutMaxFallSpeed:720,minRiseSpeed:-600};
+const NET_GLIDE_SPEC={openGravity:320,cutGravity:640,openMaxFallSpeed:220,cutMaxFallSpeed:340,fastCutMaxFallSpeed:720,minRiseSpeed:-600,openLandsOnPlatforms:false,cutLandsOnPlatforms:true};
 function netReviveTarget(){const target=NET.privateState?.reviveTarget;return target&&typeof target.id==="string"?target:null;}
 function netSetEmoteValue(raw){
   const s=typeof raw==="string"?raw.trim():"";
@@ -3832,6 +4612,7 @@ function setLocalEmote(p,raw){
   return candidate;
 }
 function netFinalizeGhostPacket(pkt){
+  pkt.jump=false;pkt.jumpHeld=false;
   pkt.interact=!!(pkt.interact||pkt.ability);for(const action of NET_ACTIONS){if(action==="interact")continue;if(action==="emote"){delete pkt.emote;continue;}pkt[action]=false;}NET.weaponQueued=false;NET.weaponPendingSeq=null;return pkt;
 }
 function netLootLabel(l){
@@ -3912,57 +4693,160 @@ function netSurfaceMotion(body,tickNo){
   for(const effect of NET_SURFACE_BRAMBLE)if(body.x+body.w>effect.x&&body.x<effect.x+effect.w&&feet>effect.y&&feet<effect.y+effect.h)motion.speedMultiplier*=effect.speedMultiplier;
   return motion;
 }
-function netPredictStep(body,input,dt=NET_STEP,tickNo=0){
-  // surfaceMotion is sampled from the PRE-STEP body, exactly like room.js evaluates
-  // this.surfaceMotion(p) as an argument to stepBody() -- body.climbing and body.onGround are
-  // still last tick's values here, which is what the server reads too.
-  const motion=netSurfaceMotion(body,tickNo);
-  const platforms=body.gliding&&body.chuteOpen?[]:netPredictGeometry(),overlapX=p=>body.x+body.w>p.x&&body.x<p.x+p.w;
-  const cx=body.x+body.w/2,cy=body.y+body.h/2,ladder=LADDERS.find(l=>cx>l.x-10&&cx<l.x+l.w+10&&cy>l.y&&cy<l.y+l.h);
-  // SURFACE MOTION: these four statements are a line-for-line mirror of multiplayer/world.js
-  // stepBody() -- same order, same constants, same arithmetic. Do not "simplify" them; the
-  // order of the ice lerp, the wind add and the speed multiply is what makes the two sides
-  // agree bit-for-bit (multiplayer/test/prediction-parity.browser.js).
-  const dir=(input.right?1:0)-(input.left?1:0),targetVx=dir*(body.speed||280);
+// BEGIN INLINED MOBILITY PREDICTION
+const netMobilityStepBody=(()=>{
+const COLLISION_PLATFORMS=[],GLIDE_SPEC=NET_GLIDE_SPEC;
+function overlapX(body,p){return body.x+body.w>p.x&&body.x<p.x+p.w;}
+// Movement broadphase: buckets the per-tick platforms array by x so probes and
+// collision passes can skip platforms that cannot possibly overlap the body.
+// Cached on the platforms array identity (Room.step builds one combined array per
+// tick and reuses it for every body, so this amortises to one build per tick).
+// Each bucket preserves canonical platform order. Queries crossing a bucket edge
+// deliberately fall back to that canonical array, avoiding merge/dedup allocation
+// and preserving exact tie behaviour. Wide platforms are registered in each bucket
+// they span; the world ground costs only 38 references per cached tick index.
+const BROADPHASE_BUCKET=256,BROADPHASE_CACHE=new WeakMap(),EMPTY_PLATFORMS=Object.freeze([]);
+function platformBroadphase(platforms){
+  let index=BROADPHASE_CACHE.get(platforms);if(index)return index;
+  const buckets=[];
+  for(const p of platforms){
+    const first=Math.max(0,Math.floor(p.x/BROADPHASE_BUCKET)),last=Math.max(0,Math.floor((p.x+p.w)/BROADPHASE_BUCKET));
+    for(let b=first;b<=last;b++)(buckets[b]||(buckets[b]=[])).push(p);
+  }
+  index={buckets};BROADPHASE_CACHE.set(platforms,index);return index;
+}
+function platformCandidates(platforms,minX,maxX){
+  if(!platforms.length)return EMPTY_PLATFORMS;
+  const first=Math.max(0,Math.floor(minX/BROADPHASE_BUCKET)),last=Math.max(0,Math.floor(maxX/BROADPHASE_BUCKET));
+  if(first!==last)return platforms;
+  return platformBroadphase(platforms).buckets[first]||EMPTY_PLATFORMS;
+}
+function onLadder(body){
+  const cx=body.x+body.w/2,cy=body.y+body.h/2;
+  for(let i=0;i<LADDERS.length;i++){
+    const ladder=LADDERS[i];
+    if(cx>ladder.x-10&&cx<ladder.x+ladder.w+10&&cy>ladder.y&&cy<ladder.y+ladder.h)return ladder;
+  }
+  return undefined;
+}
+function wallContactFromPlatform(body,platform,dir){
+  const ownedBuild=typeof platform.owner==="string"&&typeof platform.id==="string";
+  return {dir,solid:true,live:platform.live!==false,oneWay:!!platform.oneWay,bldg:!!platform.bldg,faceHeight:platform.h,overlapY:Math.max(0,Math.min(body.y+body.h,platform.y+platform.h)-Math.max(body.y,platform.y)),ownerId:ownedBuild?platform.owner:null,buildId:ownedBuild?platform.id:null};
+}
+function probeWallContact(body,platforms,intent){
+  const candidates=[];
+  for(const platform of platforms){
+    if(platform.oneWay||platform.bldg||body.y+body.h<=platform.y||body.y>=platform.y+platform.h)continue;
+    if(Math.abs(body.x+body.w-platform.x)<=.75)candidates.push(wallContactFromPlatform(body,platform,1));
+    if(Math.abs(body.x-(platform.x+platform.w))<=.75)candidates.push(wallContactFromPlatform(body,platform,-1));
+  }
+  const preferred=candidates.find(contact=>intent*contact.dir>0&&qualifyingWallContact(contact,body.h));
+  return preferred||candidates.find(contact=>qualifyingWallContact(contact,body.h))||null;
+}
+function probeCeilingBlocked(body,platforms){
+  if(body.y<=.75)return true;
+  return platforms.some(platform=>!platform.oneWay&&overlapX(body,platform)&&Math.abs(body.y-(platform.y+platform.h))<=.75);
+}
+function stepBody(body,input,dt,dynamic=[],motion=null,combinedPlatforms=null){
+  const gliding=!!body.gliding,chuteOpen=gliding&&!!body.chuteOpen;
+  const landsOnPlatforms=!gliding||(chuteOpen?GLIDE_SPEC.openLandsOnPlatforms:GLIDE_SPEC.cutLandsOnPlatforms);
+  const platforms=landsOnPlatforms?(combinedPlatforms||(dynamic.length?COLLISION_PLATFORMS.concat(dynamic):COLLISION_PLATFORMS)):[];
+  const dir=(input.right?1:0)-(input.left?1:0),ladder=onLadder(body),climb=(input.down?1:0)-(input.up?1:0);
+  const previousPlatforms=platformCandidates(platforms,body.x-.75,body.x+body.w+.75);
+  const previousWallContact=probeWallContact(body,previousPlatforms,dir),previousCeilingBlocked=probeCeilingBlocked(body,previousPlatforms),damageInterrupted=!!body.mobilityDamageInterrupted,stunned=!!body.mobilityStunned;
+  let mobility=readMobilityState(body),mobilityPlan={state:mobility,verticalVelocity:null,horizontalMultiplier:1,combatLocked:false},dashPlan={state:mobility,horizontalVelocity:null,combatLocked:false};
+  if(damageInterrupted){
+    if((body.classId==="ninja"||body.classId==="jimo")&&(mobility.mobilityMode===MOBILITY_MODE.WALL_RUN||mobility.mobilityMode===MOBILITY_MODE.WALL_STICK||mobility.jimoWallAscentLock))mobility=finishWallMobilityTick(mobility,body.classId,{damageInterrupted:true,vy:body.vy});
+    else if(body.classId==="builder")mobility=finishBuilderClimbTick(mobility,{damageInterrupted:true});
+  }
+  if(stunned&&mobility.groundPoundArmed)mobility=finishGroundPoundTick(mobility,{stunned:true}).state;
+  body.coyoteT=body.onGround?COYOTE_TIME:Math.max(0,(body.coyoteT||0)-dt);
+  body.jumpBufT=Math.max(0,(body.jumpBufT||0)-dt);if(input.jump)body.jumpBufT=JUMP_BUFFER_TIME;
+  body.wallJumpLock=Math.max(0,(body.wallJumpLock||0)-dt);
+  body.climbing=!!(ladder&&climb);
+  let jumpConsumed=false,wallJumpConsumed=false;
+  if(body.climbing){body.vy=climb*220;body.x+=(ladder.x+ladder.w/2-body.w/2-body.x)*Math.min(1,dt*12);body.onGround=false;body.coyoteT=0;body.jumpBufT=0;body.wallSlide=false;}
+  else{
+    if(body.jumpBufT>0&&(body.onGround||body.coyoteT>0)){body.vy=-(body.jump||930);body.onGround=false;body.coyoteT=0;body.jumpBufT=0;jumpConsumed=true;}
+    else if(body.jumpBufT>0&&!body.onGround&&body.wallDir&&dir*body.wallDir>0&&body.wallJumpLock<=0&&(body.wallJumps||0)<WALLJUMP_MAX){
+      body.vy=WALLJUMP_VY;body.face=-body.wallDir;body.wallJumps=(body.wallJumps||0)+1;body.wallJumpLock=WALLJUMP_LOCK;body.jumpBufT=0;body.coyoteT=0;jumpConsumed=true;wallJumpConsumed=true;
+      mobility=transitionOutOfContactMobility(mobility);
+    }
+  }
+
+  const controlContext={alive:body.alive!==false,downed:!!body.downed,onGround:!!body.onGround,gliding,riding:!!body.riding,driving:!!body.driving,zipping:!!body.zipping,grappling:!!body.grapple,ledge:!!body.ledge,authoredLadder:!!body.climbing,stunned,committedAbility:!!body.abilityCast||body.bullRushTicks>0||!!body.megaAirSpike,transport:!!body.mobilityTransport,wallContact:previousWallContact,ceilingBlocked:previousCeilingBlocked,bodyHeight:body.h,playerId:body.id,vy:body.vy,tickDelta:1};
+  const mobilityInput={...input,jump:!!input.jump||jumpConsumed};
+  if(DASH_MOBILITY_MODES.has(mobility.mobilityMode)){
+    if(stunned||controlContext.transport||controlContext.authoredLadder||controlContext.grappling||controlContext.gliding||controlContext.riding||controlContext.downed){mobility=finishDashMobilityTick(mobility,{cancelled:true});}
+    dashPlan=planDashMobility(mobility,body.classId,{tickDelta:1});mobility=dashPlan.state;
+  }else if(mobility.groundPoundArmed){
+    if(stunned||controlContext.transport||controlContext.authoredLadder||controlContext.grappling||controlContext.gliding||controlContext.riding||controlContext.downed)mobility=finishGroundPoundTick(mobility,{cancelled:true}).state;
+    mobilityPlan=planGroundPound(mobility);mobility=mobilityPlan.state;
+  }else if(body.classId==="ninja"||body.classId==="jimo"){mobilityPlan=planWallMobility(mobility,body.classId,mobilityInput,controlContext);mobility=mobilityPlan.state;
+  }else if(body.classId==="tank"){mobilityPlan=planTankHover(mobility,mobilityInput,controlContext);mobility=mobilityPlan.state;
+  }else if(body.classId==="builder"){mobilityPlan=planBuilderClimb(mobility,mobilityInput,controlContext);mobility=mobilityPlan.state;}
+  Object.assign(body,mobility);body.mobilityCombatLocked=!!(mobilityPlan.combatLocked||dashPlan.combatLocked);body.mobilityWeaponAllowed=!!(mobilityPlan.weaponAllowed||dashPlan.weaponAllowed);
+
+  let targetVx=dir*(body.speed||280)*(mobilityPlan.horizontalMultiplier??1);
   if(motion?.iceControl60){const alpha=1-Math.pow(1-motion.iceControl60,dt*60);body.vx=(body.vx||0)+(targetVx-(body.vx||0))*alpha;}else body.vx=targetVx;
   if(Number.isFinite(motion?.windAcceleration))body.vx+=motion.windAcceleration*dt;
   if(Number.isFinite(motion?.speedMultiplier))body.vx*=motion.speedMultiplier;
+  const ordinaryVx=body.vx;
+  if(dashPlan.horizontalVelocity!==null)body.vx=dashPlan.horizontalVelocity;
+  if(wallJumpConsumed)body.vx=-body.wallDir*WALLJUMP_VX;
   if(dir)body.face=dir;
-  const climb=(input.down?1:0)-(input.up?1:0);body.climbing=!!(ladder&&climb);
-  // WALLKIT (online prediction): must mirror multiplayer/world.js stepBody bit-for-bit.
-  // input.jump is already an edge-latched, single-tick pulse (NET.tick()'s jumpEdge /
-  // Room.input()'s pendingActions latch), so no jumpBufT/coyoteT replica is needed —
-  // see the matching comment in stepBody. body.wallDir/blockedX are one-tick-stale,
-  // set by the PREVIOUS call's horizontal resolution below.
-  body.wallJumpLock=Math.max(0,(body.wallJumpLock||0)-dt);
-  if(body.climbing){body.vy=climb*220;body.x+=(ladder.x+ladder.w/2-body.w/2-body.x)*Math.min(1,dt*12);body.onGround=false;}
-  else{
-    if(input.jump&&body.onGround){body.vy=-(body.jump||930);body.onGround=false;}
-    else if(input.jump&&!body.onGround&&body.wallDir&&dir*body.wallDir>0&&body.wallJumpLock<=0&&(body.wallJumps||0)<WALLJUMP_MAX){
-      body.vy=WALLJUMP_VY;body.vx=-body.wallDir*WALLJUMP_VX;body.face=-body.wallDir;
-      body.wallJumps=(body.wallJumps||0)+1;body.wallJumpLock=WALLJUMP_LOCK;
-    }
-    if(body.gliding){
-      const gravity=body.chuteOpen?NET_GLIDE_SPEC.openGravity:NET_GLIDE_SPEC.cutGravity;
-      const maxFall=body.chuteOpen?NET_GLIDE_SPEC.openMaxFallSpeed:(input.down?NET_GLIDE_SPEC.fastCutMaxFallSpeed:NET_GLIDE_SPEC.cutMaxFallSpeed);
-      body.vy=clamp(body.vy+gravity*dt,NET_GLIDE_SPEC.minRiseSpeed,maxFall);
+
+  if(!body.climbing){
+    if(mobilityPlan.verticalVelocity!==null)body.vy=mobilityPlan.verticalVelocity;
+    else if(gliding){
+      const gravity=chuteOpen?GLIDE_SPEC.openGravity:GLIDE_SPEC.cutGravity;
+      const maxFallSpeed=!chuteOpen&&input.down?GLIDE_SPEC.fastCutMaxFallSpeed:(chuteOpen?GLIDE_SPEC.openMaxFallSpeed:GLIDE_SPEC.cutMaxFallSpeed);
+      body.vy=clamp(body.vy+gravity*dt,GLIDE_SPEC.minRiseSpeed,maxFallSpeed);
     }else body.vy+=2200*dt;
+    body.wallSlide=!!(!gliding&&body.mobilityMode===MOBILITY_MODE.NONE&&body.wallDir&&dir*body.wallDir>0&&body.vy>0);
+    if(body.wallSlide&&body.vy>WALLSLIDE_CAP)body.vy=WALLSLIDE_CAP;
   }
-  const oldX=body.x;body.x=clamp(oldX+body.vx*dt,0,W-body.w);
-  // WALLKIT: recompute wall contact fresh every tick for NEXT call's jump check.
-  body.blockedX=false;body.wallDir=0;
-  for(const p of platforms){
-    if(p.oneWay||body.y+body.h<=p.y||body.y>=p.y+p.h||!overlapX(p))continue;
-    if(body.vx>0){body.x=p.x-body.w;body.blockedX=true;if(!p.bldg)body.wallDir=1;}
-    else if(body.vx<0){body.x=p.x+p.w;body.blockedX=true;if(!p.bldg)body.wallDir=-1;}
-    body.vx=0;
+
+  const oldX=body.x,movementVx=body.vx,unclampedX=oldX+movementVx*dt,nextX=clamp(unclampedX,0,W-body.w);let horizontalHit=null,hitX=nextX,hitDistance=Infinity;
+  const horizontalPlatforms=platformCandidates(platforms,Math.min(oldX,nextX),Math.max(oldX,nextX)+body.w);
+  for(const p of horizontalPlatforms){
+    if(p.oneWay||body.y+body.h<=p.y||body.y>=p.y+p.h||movementVx===0)continue;
+    let candidate=null;
+    if(movementVx>0&&(oldX+body.w<=p.x+.01&&nextX+body.w>=p.x||nextX+body.w>p.x&&nextX<p.x+p.w))candidate=p.x-body.w;
+    else if(movementVx<0&&(oldX>=p.x+p.w-.01&&nextX<=p.x+p.w||nextX<p.x+p.w&&nextX+body.w>p.x))candidate=p.x+p.w;
+    if(candidate===null)continue;const distance=Math.abs(candidate-oldX);if(distance<hitDistance){hitDistance=distance;hitX=candidate;horizontalHit=p;}
   }
-  const oldY=body.y;body.y=clamp(oldY+body.vy*dt,0,H-body.h);body.onGround=false;
-  if(body.vy>=0){let top=Infinity;for(const p of platforms){if(!overlapX(p))continue;const oldBottom=oldY+body.h,newBottom=body.y+body.h;if(oldBottom<=p.y+0.01&&newBottom>=p.y&&p.y<top)top=p.y;}if(top<Infinity){body.y=top-body.h;body.vy=0;body.onGround=true;}}
-  else for(const p of platforms){if(p.oneWay||!overlapX(p))continue;if(oldY>=p.y+p.h-3&&body.y<=p.y+p.h){body.y=p.y+p.h;body.vy=0;break;}}if(body.y+body.h>=H-180){body.y=H-180-body.h;body.vy=0;body.onGround=true;}
+  body.x=clamp(hitX,0,W-body.w);body.blockedX=!!horizontalHit||unclampedX!==nextX;body.wallDir=0;body.wallContact=null;if(body.blockedX)body.vx=0;
+  const obstacleHit=body.blockedX&&dashPlan.horizontalVelocity!==null;
+  const oldY=body.y,descending=body.vy>=0,nextY=clamp(oldY+body.vy*dt,0,H-body.h);body.y=nextY;body.onGround=false;
+  let ceilingHit=false;body.ceilingBlocked=false;
+  const verticalPlatforms=platformCandidates(platforms,body.x-.75,body.x+body.w+.75);
+  if(body.vy>=0){let top=Infinity;const oldBottom=oldY+body.h,newBottom=body.y+body.h;
+    for(const p of verticalPlatforms){if(!overlapX(body,p))continue;if(oldBottom<=p.y+0.01&&newBottom>=p.y&&p.y<top)top=p.y;}
+    if(top<Infinity){body.y=top-body.h;body.vy=0;body.onGround=true;}}
+  else for(const p of verticalPlatforms){if(p.oneWay||!overlapX(body,p))continue;if(oldY>=p.y+p.h-3&&body.y<=p.y+p.h){body.y=p.y+p.h;body.vy=0;ceilingHit=true;body.ceilingBlocked=true;break;}}if(body.y<=0&&body.vy<0){body.vy=0;ceilingHit=true;body.ceilingBlocked=true;}if(body.y+body.h>=H-180){body.y=H-180-body.h;body.vy=0;body.onGround=true;}
+
+  body.wallContact=probeWallContact(body,verticalPlatforms,dir);body.wallDir=body.wallContact?.dir||0;
+  const contactValid=qualifyingWallContact(body.wallContact,body.h),intoWall=contactValid&&dir*body.wallContact.dir>.15;
+  if(DASH_MOBILITY_MODES.has(mobility.mobilityMode)){mobility=finishDashMobilityTick(mobility,{movementApplied:!obstacleHit,obstacleHit,ceilingHit,tickDelta:dashPlan.activeTickDelta??1});if(mobility.mobilityMode===MOBILITY_MODE.NONE)body.vx=obstacleHit?0:ordinaryVx;}
+  else if(body.classId==="ninja"||body.classId==="jimo")mobility=finishWallMobilityTick(mobility,body.classId,{movementApplied:!ceilingHit,contactValid,jumpHeld:!!input.jumpHeld,intoWall,landed:body.onGround,ceilingHit,vy:body.vy,tickDelta:mobilityPlan.activeTickDelta??1,elapsedTickDelta:damageInterrupted?0:1});
+  else if(body.classId==="tank")mobility=finishTankHoverTick(mobility,{movementApplied:!ceilingHit,landed:body.onGround,ceilingHit,tickDelta:mobilityPlan.activeTickDelta??1});
+  else if(body.classId==="builder")mobility=finishBuilderClimbTick(mobility,{movementApplied:!ceilingHit,contactValid,landed:body.onGround,ceilingHit,damageInterrupted,tickDelta:mobilityPlan.activeTickDelta??1});
+  if(mobility.groundPoundArmed){const result=finishGroundPoundTick(mobility,{landed:body.onGround,descending,stunned});mobility=result.state;if(result.impact)body.groundPoundImpact=true;}
+  Object.assign(body,mobility);body.mobilityDamageInterrupted=false;body.mobilityStunned=false;body.mobilityTransport=false;
   if(body.onGround)body.wallJumps=0;
   return body;
 }
+
+const DASH_MOBILITY_MODES=new Set([MOBILITY_MODE.JET_BURST,MOBILITY_MODE.DASH_SLASH,MOBILITY_MODE.BOARD_RUSH,MOBILITY_MODE.RAIL_GRIND,MOBILITY_MODE.SPIN_DASH,MOBILITY_MODE.SPRING_HOP]);
+function transitionOutOfContactMobility(state){
+  if(state.mobilityMode!==MOBILITY_MODE.WALL_RUN&&state.mobilityMode!==MOBILITY_MODE.WALL_STICK&&state.mobilityMode!==MOBILITY_MODE.BUILD_CLIMB)return state;
+  return {...state,mobilityMode:MOBILITY_MODE.NONE,mobilityDir:0,mobilitySeq:state.mobilitySeq+1};
+}
+return stepBody;
+})();
+function netPredictStep(body,input,dt=NET_STEP,tickNo=0){return netMobilityStepBody(body,input,dt,[],netSurfaceMotion(body,tickNo),netPredictGeometry());}
+// END INLINED MOBILITY PREDICTION
 NET.resetPrediction=function(){this.started=false;this.seq=0;this.sendT=0;this.jumpHeld=false;this.padActionsReady=false;this.weaponQueued=false;this.weaponPendingSeq=null;this.snapshot=null;this.snapshots=[];this.lastSnapshotTick=-1;this.lastAppliedTick=-1;this.lastAck=0;this.pendingInputs=[];this.predicted=null;this.predictTick=0;this.renderViewTickQ=null;this.renderOffsetX=this.renderOffsetY=0;this.privateState=null;this.privateFrames=new Map();this.terrainKey=null;this.lastInteractionEventSeq=0;this.abilityVisuals=[];this.abilityEventSeen=new Set();this.abilityEventOrder=[];this.abilitySfxTimes=[];this.weaponVisuals=[];this.weaponEventSeen=new Set();this.weaponEventOrder=[];this.weaponProjectileState=new Map();this.weaponSfxTimes=[];this.hauntVisuals=[];this.hauntEventSeen=new Set();this.hauntEventOrder=[];this.hauntSfxTimes=[];this.actorVisuals=new Map();this.hirelingFrames=[];this.hirelingsBySlot=new Map();this.hirelingsRendered=[];this.matchSyncPending=false;this.matchSyncStartedAt=0;this.matchSyncSnapshotSeen=false;this.matchSyncTimedOut=false;this.matchSyncTimeoutWarned=false;this.matchSyncAssetTimeoutMs=12000;document.getElementById("matchSyncOverlay")?.classList.add("hidden");};
 NET.beginMatchSync=function(reason="Waiting for the authoritative match snapshot before gameplay starts."){this.matchSyncPending=true;this.matchSyncStartedAt=netNow();this.matchSyncSnapshotSeen=false;this.matchSyncTimedOut=false;this.matchSyncTimeoutWarned=false;this.matchSyncAssetTimeoutMs=12000;const overlay=document.getElementById("matchSyncOverlay"),status=document.getElementById("matchSyncStatus"),progress=document.getElementById("matchSyncProgress");if(overlay){overlay.classList.remove("hidden");overlay.setAttribute("aria-hidden","false");}if(status)status.textContent=String(reason);if(progress)progress.textContent="Syncing…";this.updateMatchSyncStatus();clearGameplayInput();};
 NET.finishMatchSync=function(){this.matchSyncPending=false;this.matchSyncStartedAt=0;this.matchSyncSnapshotSeen=false;this.matchSyncTimedOut=false;this.matchSyncTimeoutWarned=false;const overlay=document.getElementById("matchSyncOverlay"),status=document.getElementById("matchSyncProgress");if(overlay){overlay.classList.add("hidden");overlay.setAttribute("aria-hidden","true");}if(status)status.textContent="";}
@@ -4012,9 +4896,9 @@ NET.checkMatchSyncReady=function(snapshot){
   if(!G.player)return;
   this.finishMatchSync();
 };
-NET.tick=function(dt){if(!this.active||!this.started||G.state!=="match"||this.reconnecting||this.matchSyncPending)return;const p=G.player;if(!p)return;const gated=orientationShouldGate(),input=gated?{ax:0,climb:0,jump:false,gp:null}:traversalInput(),gp=input.gp,ghost=netLocalGhostActive(),downed=!!(this.privateState?.downed||this.snapshot?.players?.find(v=>v.id===this.id)?.downed),reviveTarget=netReviveTarget();if(!gated)queueOnlineGamepadActions(p,gp);this.sendT-=dt;if(this.sendT>0){this.renderPrediction();return;}this.sendT=NET_STEP;const jumpEdge=!!input.jump&&!this.jumpHeld,usingPad=!!(gp&&INPUT.pad),padAim=Number.isFinite(p.aimAng)?p.aimAng:(p.face<0?Math.PI:0);const ax=usingPad?Math.cos(padAim):(mouse.wx-(p.x+p.w/2)),ay=usingPad?Math.sin(padAim):(mouse.wy-(p.y+p.h/2)),am=Math.hypot(ax,ay)||1,reviveHeld=!!reviveTarget&&!downed&&!gated&&!!(keys.e||this.reviveTouchHeld||gp?.buttons?.[1]?.pressed);const pkt={type:"input",seq:this.seq+1,viewTickQ:Number.isSafeInteger(this.renderViewTickQ)?this.renderViewTickQ:undefined,left:!downed&&!gated&&input.ax<-.15,right:!downed&&!gated&&input.ax>.15,up:!downed&&!gated&&input.climb<-.15,down:!downed&&!gated&&input.climb>.15,jump:!downed&&!ghost&&!gated&&jumpEdge,aimX:ax/am,aimY:ay/am,fire:!downed&&!ghost&&!gated&&!!(mouse.down||keys.j||(gp?.buttons?.[7]?.pressed)),emote:this.actions.emote,weapon:this.actions.weapon,weaponChanged:!downed&&!ghost&&!gated&&!!this.weaponQueued,revive:reviveHeld,reviveTargetId:reviveTarget?.id};for(const k of NET_ACTIONS)pkt[k]=downed||gated?false:this.actions[k];if(reviveHeld)pkt.interact=false;if(ghost)netFinalizeGhostPacket(pkt);if(pkt.interact)pkt.interactTargetId=netInteractionTargetId(p);if(!this.send(pkt))return;this.seq=pkt.seq;this.jumpHeld=!gated&&!!input.jump;if(pkt.weaponChanged){this.weaponPendingSeq=pkt.seq;this.weaponQueued=false;}for(const k of NET_ACTIONS)this.actions[k]=false;if(pkt.emote===false||pkt.emote===null)this.actions.emote=null;const movement={left:pkt.left,right:pkt.right,up:pkt.up,down:pkt.down,jump:pkt.jump};this.pendingInputs.push({seq:pkt.seq,input:movement,packet:{...pkt}});if(this.pendingInputs.length>128)this.pendingInputs.splice(0,this.pendingInputs.length-128);if(!this.predicted||!!this.predicted.ghost!==ghost){const cls=CLASSES[p.cls]||CLASSES.jumper;this.predicted={x:p.x,y:p.y,vx:p.vx||0,vy:p.vy||0,w:p.w,h:p.h,speed:cls.speed,jump:cls.jump,onGround:!!p.onGround,climbing:!!p.climbing,gliding:!!p.gliding,face:p.face||1,ghost};}this.predictTick=(Number(this.predictTick)||0)+1;if(ghost)netPredictGhostStep(this.predicted,movement);else if(!downed&&!p.riding&&!p.car&&!p.zipping)netPredictStep(this.predicted,movement,NET_STEP,this.predictTick);this.renderPrediction();};
+NET.tick=function(dt){if(!this.active||!this.started||G.state!=="match"||this.reconnecting||this.matchSyncPending)return;const p=G.player;if(!p)return;const gated=orientationShouldGate()||G.paused||CTRLS_OPEN,input=gated?{ax:0,climb:0,jump:false,gp:null}:traversalInput(),gp=input.gp,ghost=netLocalGhostActive(),downed=!!(this.privateState?.downed||this.snapshot?.players?.find(v=>v.id===this.id)?.downed),reviveTarget=netReviveTarget();if(!gated)queueOnlineGamepadActions(p,gp);this.sendT-=dt;if(this.sendT>0){this.renderPrediction();return;}this.sendT=NET_STEP;const jumpEdge=!!input.jump&&!this.jumpHeld,usingPad=!!(gp&&INPUT.pad),padAim=Number.isFinite(p.aimAng)?p.aimAng:(p.face<0?Math.PI:0);const ax=usingPad?Math.cos(padAim):(mouse.wx-(p.x+p.w/2)),ay=usingPad?Math.sin(padAim):(mouse.wy-(p.y+p.h/2)),am=Math.hypot(ax,ay)||1,reviveHeld=!!reviveTarget&&!downed&&!gated&&!!(keys.e||this.reviveTouchHeld||gp?.buttons?.[1]?.pressed);const pkt={type:"input",seq:this.seq+1,viewTickQ:Number.isSafeInteger(this.renderViewTickQ)?this.renderViewTickQ:undefined,left:!downed&&!gated&&input.ax<-.15,right:!downed&&!gated&&input.ax>.15,up:!downed&&!gated&&input.climb<-.15,down:!downed&&!gated&&input.climb>.15,jump:!downed&&!ghost&&!gated&&jumpEdge,jumpHeld:!downed&&!ghost&&!gated&&!!input.jump,aimX:ax/am,aimY:ay/am,fire:!downed&&!ghost&&!gated&&!!(mouse.down||keys.j||(gp?.buttons?.[7]?.pressed)),emote:this.actions.emote,weapon:this.actions.weapon,weaponChanged:!downed&&!ghost&&!gated&&!!this.weaponQueued,revive:reviveHeld,reviveTargetId:reviveTarget?.id};for(const k of NET_ACTIONS)pkt[k]=downed||gated?false:this.actions[k];if(reviveHeld)pkt.interact=false;if(ghost)netFinalizeGhostPacket(pkt);if(pkt.interact)pkt.interactTargetId=netInteractionTargetId(p);if(!this.send(pkt))return;onlineTrainingInput(pkt);this.seq=pkt.seq;this.jumpHeld=!gated&&!!input.jump;if(pkt.weaponChanged){this.weaponPendingSeq=pkt.seq;this.weaponQueued=false;}for(const k of NET_ACTIONS)this.actions[k]=false;if(pkt.emote===false||pkt.emote===null)this.actions.emote=null;const movement={left:pkt.left,right:pkt.right,up:pkt.up,down:pkt.down,jump:pkt.jump,jumpHeld:pkt.jumpHeld};this.pendingInputs.push({seq:pkt.seq,input:movement,packet:{...pkt}});if(this.pendingInputs.length>128)this.pendingInputs.splice(0,this.pendingInputs.length-128);if(!this.predicted||!!this.predicted.ghost!==ghost){const cls=CLASSES[p.cls]||CLASSES.jumper;this.predicted={...clientMobilityState(p),id:this.id,classId:p.cls,alive:p.alive!==false,wallContact:p.wallContact||null,x:p.x,y:p.y,vx:p.vx||0,vy:p.vy||0,w:p.w,h:p.h,speed:cls.speed,jump:cls.jump,onGround:!!p.onGround,climbing:!!p.climbing,gliding:!!p.gliding,face:p.face||1,ghost};}this.predictTick=(Number(this.predictTick)||0)+1;if(ghost)netPredictGhostStep(this.predicted,movement);else if(!downed&&!p.riding&&!p.car&&!p.zipping&&!this.privateState?.mobilityCommitted)netPredictStep(this.predicted,movement,NET_STEP,this.predictTick);this.renderPrediction();};
 NET.requeue=function(){if(!this.active||!this.connected)return this.status("Reconnect before finding another match.",true);document.getElementById("onlineScreen").classList.remove("hidden");document.getElementById("onlineRoom").classList.add("hidden");this.status("Finding your next online match…");const identity=this.identity();identity.classId=G.chosen||identity.classId;this.send({type:"requeue",...identity,mode:this.snapshot?.mode||document.getElementById("onlineMode").value});};
-NET.renderPrediction=function(){const p=G.player,b=this.predicted;if(!p||!b)return;this.renderOffsetX*=.42;this.renderOffsetY*=.42;if(Math.abs(this.renderOffsetX)<.05)this.renderOffsetX=0;if(Math.abs(this.renderOffsetY)<.05)this.renderOffsetY=0;p.x=b.x+this.renderOffsetX;p.y=b.y+this.renderOffsetY;p.vx=b.vx;p.vy=b.vy;p.onGround=b.onGround;p.climbing=b.climbing;p.face=b.face;};
+NET.renderPrediction=function(){const p=G.player,b=this.predicted;if(!p||!b)return;this.renderOffsetX*=.42;this.renderOffsetY*=.42;if(Math.abs(this.renderOffsetX)<.05)this.renderOffsetX=0;if(Math.abs(this.renderOffsetY)<.05)this.renderOffsetY=0;p.x=b.x+this.renderOffsetX;p.y=b.y+this.renderOffsetY;p.vx=b.vx;p.vy=b.vy;p.onGround=b.onGround;p.climbing=b.climbing;p.face=b.face;applyClientMobility(p,b);p.wallContact=b.wallContact||null;};
 // Online transport hardening: reconnect the reserved session automatically,
 // apply each authoritative frame once, and render remote players one frame
 // behind so the 10 Hz server stream appears smooth instead of teleporting.
@@ -4031,8 +4915,10 @@ NET.reconcile=function(){
   if(!Number.isFinite(ack)||ack<this.lastAck)return;
   this.lastAck=ack;
   this.pendingInputs=this.pendingInputs.filter(v=>v.seq>ack);
-  const cls=CLASSES[p.cls]||CLASSES[s.classId]||CLASSES.jumper,oldX=p.x,oldY=p.y,topology=!!(s.downed||s.riding||s.carId||s.zipping||(s.stunT||0)>0);
-  this.predicted={x:s.x,y:s.y,vx:s.vx,vy:s.vy,w:p.w,h:p.h,speed:cls.speed,jump:cls.jump,onGround:!!s.onGround,climbing:!!s.climbing,gliding:!!s.gliding,face:s.face||p.face};
+  const cls=CLASSES[p.cls]||CLASSES[s.classId]||CLASSES.jumper,oldX=p.x,oldY=p.y,topology=!!(s.downed||s.riding||s.carId||s.zipping||s.mobilityCommitted||(s.stunT||0)>0);
+  this.predicted={...clientMobilityState(s),id:this.id,classId:s.classId||p.cls,alive:s.alive!==false,downed:!!s.downed,wallContact:s.wallContact||null,mobilityCommitted:!!s.mobilityCommitted,x:s.x,y:s.y,vx:s.vx,vy:s.vy,w:p.w,h:p.h,speed:cls.speed,jump:cls.jump,onGround:!!s.onGround,climbing:!!s.climbing,gliding:!!s.gliding,face:s.face||p.face};
+  Object.assign(this.predicted,{chuteOpen:!!s.chuteOpen,coyoteT:s.coyoteT||0,jumpBufT:s.jumpBufT||0,
+    wallDir:s.wallDir||0,blockedX:!!s.blockedX,wallJumps:s.wallJumps||0,wallJumpLock:s.wallJumpLock||0,wallSlide:!!s.wallSlide});
   // SURFACE MOTION: replay every un-acked input on the server tick it will actually be
   // simulated on. Room.step() increments tickNo BEFORE stepping bodies, so this snapshot is the
   // product of tick snapshot.tick and the first un-acked input lands on snapshot.tick+1. Only
@@ -4054,6 +4940,8 @@ NET.reconcile=function(){
   p.riding=s.riding;
   p.gliding=s.gliding;
   p.face=s.face||p.face;
+  onlineTrainingState(s);
+  if(s.matchStats)p.netMatchStats={...s.matchStats};
   syncAuthoritativeMega(p,!!s.megaActive);
   if(Array.isArray(s.weapons)){
     p.weapons=s.weapons.slice();
@@ -4124,13 +5012,34 @@ function creditOnlineCareerResult(result){
 /* ===== end online career credit ===== */
 const _netMessage=NET.message.bind(NET);
 NET.message=m=>{
-  if(m.type==="ready"&&m.account){NET.profile=m.account.profile;hydratePreferredRiotTag(m.account.profile?.name);try{localStorage.setItem("rr_online_auth",JSON.stringify({id:m.account.id,token:m.account.token}));}catch{}}
+  if(m.type==="ready"&&m.account){NET.profile=m.account.profile;hydratePreferredRiotTag(m.account.profile?.name);if(!NET.steamMode)try{localStorage.setItem("rr_online_auth",JSON.stringify({id:m.account.id,token:m.account.token}));}catch{}}
   if(["joined","resumed","presence","queue_status","match_roster","match_started","snapshot","match_ended"].includes(m.type)){if(m.mode)NET.mode=m.mode;if(Number.isFinite(Number(m.teamSize)))NET.teamSize=Math.max(1,Math.floor(Number(m.teamSize)));if(Number.isSafeInteger(m.teamId))NET.teamId=m.teamId;}
   if((m.type==="joined"||m.type==="resumed")&&m.name)NET.sessionName=String(m.name);
   if(m.type==="presence"||m.type==="match_roster"){const self=(m.players||[]).find(p=>p.id===NET.id);if(self?.name)NET.sessionName=String(self.name);}
+  if(m.type==="match_ended"&&G.player&&m.matchStats)G.player.netMatchStats={...m.matchStats};
+  if(m.type==="match_ended"&&G.player&&Number.isSafeInteger(m.result?.kills)&&m.result.kills>=0)G.player.kills=m.result.kills;
   if(m.type==="match_ended"&&m.result){G.serverResult=m.result;creditOnlineCareerResult(m.result);G.careerLogged=true;G.matchXpEarned=m.result.xp||0;NET.profile={...(NET.profile||{}),xp:m.result.totalXp,wins:m.result.wins,matches:m.result.matches};}
   const result=_netMessage(m);if(m.type==="snapshot"&&NET.teamSize>1)G.aliveStart=Math.ceil((Number(m.capacity)||G.aliveStart)/NET.teamSize);return result;
 };
+function trainingText(training){
+  if(!padActive())return training.kb;
+  const ps=controllerFamily()==="ps";
+  return training.pad.replaceAll("A/✕",ps?"✕":"A").replaceAll("B/○",ps?"○":"B")
+    .replaceAll("Y/△",ps?"△":"Y").replaceAll("RT",ps?"R2":"RT").replaceAll("LB",ps?"L1":"LB");
+}
+function onlineTrainingInput(packet){
+  if(!ONBOARD.active||G.warmup||!Number.isSafeInteger(packet.seq))return;
+  for(const [key,intended] of [["onlineMoves",packet.left||packet.right],["onlineJumps",packet.jump]]){
+    if(intended)ONBOARD.flags[key]=[...(ONBOARD.flags[key]||[]),packet.seq].slice(-16);
+  }
+}
+function onlineTrainingState(s){
+  if(!NET.active||G.warmup||!s?.alive||s.riding||s.gliding||s.downed)return;
+  const intended=key=>(ONBOARD.flags[key]||[]).some(seq=>Number.isSafeInteger(s.ack)&&s.ack>=seq&&s.ack-seq<=3);
+  if(intended("onlineMoves")&&Math.abs(s.vx||0)>20)ONBOARD.event("move");
+  if(intended("onlineJumps")&&(s.vy||0)<-200&&!s.climbing)ONBOARD.event("jump");
+  if(s.weapons?.some(id=>WEAPONS[id]&&!WEAPONS[id].melee))ONBOARD.event("crate");
+}
 const _netWireMessage=NET.message.bind(NET);NET.rosterMeta=new Map();NET.privateState=null;
 NET.message=m=>{
   if(m.type==="match_roster"){if(m.mode)NET.mode=m.mode;if(Number.isFinite(Number(m.teamSize)))NET.teamSize=Math.max(1,Math.floor(Number(m.teamSize)));NET.rosterMeta=new Map(m.players.map(p=>[p.id,p]));const self=NET.rosterMeta.get(NET.id);if(Number.isSafeInteger(self?.teamId))NET.teamId=self.teamId;return;}
@@ -4150,8 +5059,8 @@ NET.message=m=>{
     m.players=m.players.map(a=>{
       const flags=a[1];
       const meta=NET.rosterMeta.get(a[0])||{};
-      const emoteText=a[12],emoteT=Number(a[13]);
-      const p={...meta,id:a[0],connected:!!(flags&1),bot:!!(flags&2),ready:!!(flags&4),alive:!!(flags&8),riding:!!(flags&16),gliding:!!(flags&32),zipping:!!(flags&64),onGround:!!(flags&128),climbing:!!(flags&256),ghost:!!(flags&8192),megaActive:!!(flags&16384),downed:!!(flags&32768),carId:a[2],x:a[3],y:a[4],vx:a[5],vy:a[6],hp:a[7],shield:a[8],face:a[9],kills:a[10],ack:a[11],emote:netSetEmoteValue(emoteText)?{t:Number.isFinite(emoteT)?Math.max(0,emoteT):NET_EMOTE_TTL,s:emoteText}:null,teamId:meta.teamId,placement:meta.placement||0};
+      const emoteText=a[15],emoteT=Number(a[16]);
+      const p={...meta,id:a[0],connected:!!(flags&1),bot:!!(flags&2),ready:!!(flags&4),alive:!!(flags&8),riding:!!(flags&16),gliding:!!(flags&32),zipping:!!(flags&64),onGround:!!(flags&128),climbing:!!(flags&256),ghost:!!(flags&8192),megaActive:!!(flags&16384),downed:!!(flags&32768),carId:a[2],x:a[3],y:a[4],vx:a[5],vy:a[6],hp:a[7],shield:a[8],face:a[9],kills:a[10],ack:a[11],mobilityMode:Number(a[12])||0,mobilityDir:Number(a[13])||0,mobilitySeq:Number(a[14])||0,emote:netSetEmoteValue(emoteText)?{t:Number.isFinite(emoteT)?Math.max(0,emoteT):NET_EMOTE_TTL,s:emoteText}:null,teamId:meta.teamId,placement:meta.placement||0};
       if(p.id===NET.id&&exact)Object.assign(p,exact);
       return p;
     });
@@ -4173,7 +5082,7 @@ NET.message=m=>{
       }
       return {kind:"item",id:a[1],item:a[2],x:a[3],y:a[4]};
     });
-    m.builds=(m.builds||[]).map(a=>Array.isArray(a)?{id:a[0],x:a[1],y:a[2],w:a[3],h:a[4],hp:a[5]}:a);
+    m.builds=(m.builds||[]).map(a=>Array.isArray(a)?{id:a[0],x:a[1],y:a[2],w:a[3],h:a[4],hp:a[5],owner:typeof a[6]==="string"?a[6]:null}:a);
     for(let i=0;i<(m.matchTokens||[]).length;i+=3)m.loot.push({kind:"token",id:null,x:m.matchTokens[i],y:m.matchTokens[i+1],value:m.matchTokens[i+2]});
     delete m.matchTokens;
     let crateIndices=m.crates||[];
@@ -4197,6 +5106,54 @@ NET.message=m=>{
 const _netHirelingMessage=NET.message.bind(NET);NET.message=m=>{if(m?.type==="hireling_state"){netReceiveHirelingState(m);return;}return _netHirelingMessage(m);};
 const _netDropStateMessage=NET.message.bind(NET);NET.message=m=>{const flags=m.type==="snapshot"&&m.compact===1?new Map(m.players.map(row=>[row[0],row[1]])):null,result=_netDropStateMessage(m);if(flags&&Array.isArray(m.players)){for(const p of m.players){const value=flags.get(p.id)||0;p.chuteOpen=!!(value&512);p.landed=!!(value&1024);p.armed=!!(value&2048);p.landingShield=!!(value&4096);}const self=m.players.find(p=>p.id===NET.id);G.drop=!!(self&&(self.riding||self.gliding));}return result;};
 const _netCrusherMessage=NET.message.bind(NET);NET.message=m=>{const result=_netCrusherMessage(m);if(m.type==="snapshot"&&m.crusher&&G.crusher)Object.assign(G.crusher,{cyc:m.crusher.cycleTick/20,slamSeq:m.crusher.slamSeq,telegraph:!!m.crusher.telegraph,mag:m.crusher.magnetTick/20,magnetSeq:m.crusher.magnetSeq,armed:!!m.crusher.magnetTelegraph,klaxon:m.crusher.magnetTelegraph?3:0});return result;};
+// Presentation follows accepted authoritative snapshots only. Seed silently after
+// joining/resuming so existing drops and storm phases never replay as new events.
+function netWorldCues(m){
+  if(!NET.active||!NET.started||NET.snapshot!==m||!Number.isSafeInteger(m.tick))return;
+  const prior=NET.worldCueState,zone=m.zone;
+  if(prior&&m.tick<=prior.tick)return;
+  const state={tick:m.tick,zone:zone?{phase:zone.phase,state:zone.state,startedTick:zone.startedTick}:null,
+    drops:new Set((m.airdrops||[]).map(v=>v.id)),crates:new Set((m.dynamicCrates||[]).map(v=>v.id)),
+    stormWarningTick:prior?.stormWarningTick??m.tick,pip:prior?.pip??0};
+  NET.worldCueState=state;
+  if(!prior||G.state!=="match"||G.warmup)return;
+  if(zone&&prior.zone){
+    const changed=zone.phase!==prior.zone.phase||zone.state!==prior.zone.state||zone.startedTick!==prior.zone.startedTick;
+    if(changed&&zone.state==="shrink"){
+      if(!playSfx("storm_close",{vol:.6}))SFX.storm();
+      toast(zone.phase>STORM_PHASES.length?"☠ SUDDEN DEATH":zone.phase>=5?"⚡ FINAL ZONES — ROTATE NOW":"⚡ ZONE SHRINKING");
+    }else if(changed&&zone.state==="wait"&&zone.target){
+      toast("⚠ NEXT ZONE MARKED");
+      if(zone.phase===1&&G.player?.alive)ONBOARD.tip("storm");
+    }
+    const seconds=(zone.endsTick-m.tick)/20,pip=zone.state==="wait"&&seconds>0&&seconds<=3?Math.ceil(seconds):0;
+    if(pip&&pip!==prior.pip)playSfx("countdown",{vol:.5});state.pip=pip;
+    const self=m.players?.find(p=>p.id===NET.id),cx=(self?.x||0)+(self?.megaActive?30.5:17),cy=(self?.y||0)+(self?.megaActive?39.5:22);
+    // This is an exposure warning, not inferred HP damage or a damage receipt.
+    if(self?.alive&&zone.damage>0&&(cx<zone.x||cx>zone.x+zone.w||cy<zone.y||cy>zone.y+zone.h)&&m.tick-state.stormWarningTick>=20){
+      playSfx("storm_tick",{vol:.5});state.stormWarningTick=m.tick;
+    }
+  }
+  const player=m.players?.find(p=>p.id===NET.id)||G.player;
+  for(const drop of m.airdrops||[]){
+    if(prior.drops.has(drop.id))continue;
+    const near=player?clamp(1-Math.abs(drop.x-player.x)/3600,.15,1):.5;
+    toast(drop.legend?"★ CRUSHER REWARD RELEASED":"📦 SUPPLY DROP INBOUND · DISTRICT "+(Math.max(0,Math.min(7,Math.floor(drop.x/1200)))+1));
+    if(!playSfx("airdrop_flare",{vol:.6*near}))SFX.storm();
+  }
+  for(const crate of m.dynamicCrates||[]){
+    if(prior.crates.has(crate.id))continue;
+    const x=crate.x+17,y=crate.y+30,distance=player?Math.hypot(x-(player.x+(player.megaActive?30.5:17)),y-(player.y+(player.megaActive?39.5:22))):Infinity;
+    if(distance>=1400)continue;
+    playSfx("airdrop_land",{vol:.6*clamp(1-distance/1400,0,1)});
+    spawnParts(x,y,"#ffd166",PREFS.get("reducedMotion")?4:14);
+    if(G.rings&&G.rings.length<80)G.rings.push({x,y,r:6,t:.4,c:"#ffd166",sp:PREFS.get("reducedMotion")?120:460,lw:3});
+  }
+}
+const _netWorldCueMessage=NET.message.bind(NET);NET.message=m=>{
+  if(["joined","resumed","match_started"].includes(m?.type))NET.worldCueState=null;
+  const result=_netWorldCueMessage(m);if(m?.type==="snapshot")netWorldCues(m);return result;
+};
 const _netModerationMessage=NET.message.bind(NET);NET.report=function(targetId){const reason=String(prompt("REPORT REASON: cheating, harassment, hate, name, griefing, or other", "other")||"").trim().toLowerCase();if(!reason)return;if(!["cheating","harassment","hate","name","griefing","other"].includes(reason)){toast("INVALID REPORT REASON");return;}this.send({type:"report",targetId,reason});};NET.message=m=>{if(m.type==="ready")NET.handshaken=true;if(m.type==="report_ack"){toast(m.accepted?"REPORT RECEIVED — THANK YOU":"REPORT ALREADY RECEIVED");return;}return _netModerationMessage(m);};
 function onlineSpecIndex(id){const match=String(id||"").match(/:(\d{2})$/);return match?Number(match[1]):-1;}
 function normalizeOnlineWorldState(m){
@@ -4298,14 +5255,98 @@ NET.resetOnlineSession=function(){clearTimeout(this.reconnectTimer);this.active=
 NET.finishLeave=function(context="session"){clearTimeout(this.leaveTimer);const resolve=this.leaveResolve;this.leaveResolve=null;this.leavePromise=null;this.resetOnlineSession();document.getElementById("onlineScreen")?.classList.add("hidden");document.getElementById("reconnectOverlay")?.classList.add("hidden");document.getElementById("matchSyncOverlay")?.classList.add("hidden");setPaused(false);confParts.length=0;showScreen("title");refreshCareer();syncPresentationState();if(resolve)resolve(context);};
 NET.leave=function(){if(this.leavePromise)return this.leavePromise;if(!this.rawActive&&!this.room){this.finishLeave("none");return Promise.resolve("none");}this.setFlow("LEAVING","Leaving the authoritative session…");clearGameplayInput();this.leavePromise=new Promise(resolve=>{this.leaveResolve=resolve;this.leaveTimer=setTimeout(()=>this.finishLeave("timeout"),3500);});if(!this.send({type:"leave"}))this.finishLeave("offline");return this.leavePromise;};
 NET.safeBack=function(){const state=this.onlineFlowState;if(state==="CONNECTING"||state==="LEAVING")return;if(state==="CHOICE"||state==="ERROR"){this.closePanel();return;}this.leave();};
-NET.retry=function(){this.handshaken=false;this.lastError=null;this.initialRetryCount=0;this.reconnectAttempt=0;this.setFlow("CONNECTING","Retrying connection…");if(this.ws?.readyState===1){let auth=null;try{auth=JSON.parse(localStorage.getItem("rr_online_auth")||"null");}catch{}this.send({type:"hello",protocol:ONLINE_PROTOCOL,build:ONLINE_BUILD,name:currentRiotTag(),auth});}else this.connect();};
+NET.retry=function(){
+  this.handshaken=false;this.lastError=null;this.initialRetryCount=0;this.reconnectAttempt=0;this.setFlow("CONNECTING","Retrying connection…");
+  if(this.steamMode){
+    const socket=this.ws;if(socket){this.ws=null;this.connected=false;this.pendingSteamBootstrap=null;try{socket.close();}catch{}}
+    return this.connect();
+  }
+  if(this.ws?.readyState===1){let auth=null;try{auth=JSON.parse(localStorage.getItem("rr_online_auth")||"null");}catch{}this.send({type:"hello",protocol:ONLINE_PROTOCOL,build:ONLINE_BUILD,name:currentRiotTag(),auth});}
+  else this.connect();
+};
 NET.open=function(){this.connectRequested=true;document.getElementById("onlineScreen")?.classList.remove("hidden");try{this.resumePending=JSON.parse(localStorage.getItem("rr_online_session")||"null");}catch{this.resumePending=null;}if(this.resumePending){this.room=this.resumePending.room;this.id=this.resumePending.id;this.token=this.resumePending.token;this.active=true;this.setFlow(this.resumePending.phase==="match"?"RECONNECTING_MATCH":"RECONNECTING_LOBBY","Restoring your reserved slot…");}else this.setFlow(this.handshaken&&this.connected?"CHOICE":"CONNECTING",this.handshaken&&this.connected?"Connected. Choose a public match or private room.":"Connecting to the online server…");this.connect();};
 NET.closePanel=function(){document.getElementById("onlineScreen")?.classList.add("hidden");if(!this.active&&!this.room){this.connectRequested=false;clearTimeout(this.reconnectTimer);}clearGameplayInput();};
 NET.create=function(){if(!this.handshaken)return;this.resumePending=null;this.resetPrediction();this.setFlow("PRIVATE_HOST","Creating a private room…");this.send({type:"create",...this.identity(),mode:document.getElementById("onlineMode").value});};
 NET.join=function(){if(!this.handshaken)return;const room=String(document.getElementById("roomCodeInput").value||"").replace(/[^a-z0-9]/gi,"").toUpperCase();if(room.length!==6){this.status("Enter all six room-code characters.",true);document.getElementById("roomCodeInput").focus();return;}this.resumePending=null;this.resetPrediction();this.setFlow("PRIVATE_GUEST","Joining private room "+room+"…");this.send({type:"join",...this.identity(),room});};
 NET.queue=function(){if(!this.handshaken)return;this.resumePending=null;this.resetPrediction();this.setFlow("PUBLIC_QUEUED","Searching now. The countdown starts with the first human; bots fill remaining combatant slots.");this.send({type:"queue",...this.identity(),mode:document.getElementById("onlineMode").value});};
 NET.requeue=function(){if(!this.rawActive||!this.connected){this.setFlow("ERROR","Reconnect before finding another match.",true);return;}document.getElementById("onlineScreen").classList.remove("hidden");this.setFlow("PUBLIC_QUEUED","Finding your next public match…");const identity=this.identity();identity.classId=G.chosen||identity.classId;this.send({type:"requeue",...identity,mode:this.snapshot?.mode||document.getElementById("onlineMode").value});};
-NET.connect=function(){if(this.ws&&this.ws.readyState<=1)return;clearTimeout(this.reconnectTimer);const url=netServerUrl();try{this.ws=new WebSocket(url);}catch(e){this.lastError="SOCKET_CREATE";this.setFlow("ERROR","Could not open a connection. Check your network and retry.",true);return;}this.ws.onopen=()=>{this.connected=true;this.handshaken=false;let auth=null;try{auth=JSON.parse(localStorage.getItem("rr_online_auth")||"null");}catch{}this.send({type:"hello",protocol:ONLINE_PROTOCOL,build:ONLINE_BUILD,name:currentRiotTag(),auth});if(!this.active)this.setFlow("CONNECTING","Validating game build…");};this.ws.onclose=event=>{this.connected=false;this.handshaken=false;this.ws=null;/* rawActive, not active: active is the warm-up-masking getter (netActive&&!G.warmup), so a blip during queue warm-up skipped the resume entirely and dumped the player back to CHOICE, losing their reserved slot. */if(this.rawActive&&this.room&&this.id&&this.token){this.resumePending={room:this.room,id:this.id,token:this.token,phase:this.started?"match":"lobby"};try{localStorage.setItem("rr_online_session",JSON.stringify(this.resumePending));}catch{}this.reconnecting=true;this.setFlow(this.started?"RECONNECTING_MATCH":"RECONNECTING_LOBBY",this.started?"Connection lost. Restoring your live match…":"Connection lost. Restoring your lobby…",true);this.scheduleReconnect();}else if(this.connectRequested&&this.initialRetryCount<2){this.initialRetryCount++;this.setFlow("CONNECTING",`Connection interrupted. Retrying automatically (${this.initialRetryCount}/2)…`,true);this.scheduleReconnect();}else if(this.connectRequested){this.lastError="SERVER_UNAVAILABLE";const detail=event?.reason?" Server: "+event.reason:"";this.setFlow("ERROR","The online server is unavailable. Check your connection, then retry."+detail,true);}};this.ws.onerror=()=>{if(!this.active)this.status("The online server did not answer. Retrying the connection…",true);};this.ws.onmessage=e=>{let m;try{m=JSON.parse(e.data);}catch{return;}this.message(m);};};
+const DESKTOP_STEAM_FAILURE="Steam sign-in is unavailable. Launch RunGun Riot through Steam and try again.";
+NET.steamMode=false;NET.steamStatus=null;NET.steamBootstrapPromise=null;NET.pendingSteamBootstrap=null;
+NET.readSteamStatus=async function(){
+  const steam=window.runGunDesktop?.steam;
+  if(!steam?.getStatus){this.steamMode=false;return null;}
+  this.steamMode=true;
+  try{const status=await steam.getStatus();this.steamStatus=status;return status;}
+  catch{this.steamStatus={available:false};return this.steamStatus;}
+};
+NET.acquireSteamBootstrap=async function(){
+  if(this.steamBootstrapPromise)return this.steamBootstrapPromise;
+  const steam=window.runGunDesktop?.steam;
+  this.steamBootstrapPromise=(async()=>{
+    const status=await this.readSteamStatus();
+    if(!status?.available)throw new Error("STEAM_UNAVAILABLE");
+    let started;
+    try{started=await steam.startAuthentication();}
+    catch{throw new Error("STEAM_AUTH_UNAVAILABLE");}
+    const requestId=started?.requestId;
+    if(typeof requestId!=="string"||requestId.length<1)throw new Error("STEAM_AUTH_UNAVAILABLE");
+    try{
+      const result=await steam.waitAuthentication(requestId);
+      if(typeof result?.bootstrap!=="string"||result.bootstrap.length<16)throw new Error("STEAM_AUTH_UNAVAILABLE");
+      return result.bootstrap;
+    }catch(error){
+      try{await steam.cancelAuthentication(requestId);}catch{}
+      throw error;
+    }
+  })().finally(()=>{this.steamBootstrapPromise=null;});
+  return this.steamBootstrapPromise;
+};
+NET.connect=function(){
+  if(this.connectPromise)return this.connectPromise;
+  if(this.ws&&this.ws.readyState<=1)return this.connectPromise;
+  clearTimeout(this.reconnectTimer);
+  const run=async()=>{
+    let steamBootstrap=null;
+    try{
+      const steamStatus=await this.readSteamStatus();
+      if(steamStatus)steamBootstrap=await this.acquireSteamBootstrap();
+    }catch{
+      this.lastError="STEAM_AUTH_UNAVAILABLE";
+      this.setFlow("ERROR",DESKTOP_STEAM_FAILURE,true);
+      return;
+    }
+    const url=netServerUrl();let socket;
+    try{socket=new WebSocket(url);}catch{
+      this.lastError="SOCKET_CREATE";this.setFlow("ERROR","Could not open a connection. Check your network and retry.",true);return;
+    }
+    this.ws=socket;this.pendingSteamBootstrap=steamBootstrap;
+    socket.onopen=()=>{
+      if(this.ws!==socket)return;
+      this.connected=true;this.handshaken=false;
+      const hello={type:"hello",protocol:ONLINE_PROTOCOL,build:ONLINE_BUILD,name:currentRiotTag()};
+      if(this.steamMode){const bootstrap=this.pendingSteamBootstrap;this.pendingSteamBootstrap=null;if(!bootstrap){socket.close();return;}hello.steamBootstrap=bootstrap;}
+      else{let auth=null;try{auth=JSON.parse(localStorage.getItem("rr_online_auth")||"null");}catch{}hello.auth=auth;}
+      this.send(hello);this.status("Validating game build…");
+    };
+    socket.onclose=event=>{
+      if(this.ws!==socket)return;
+      this.connected=false;this.handshaken=false;this.ws=null;this.pendingSteamBootstrap=null;
+      /* rawActive, not active: active is the warm-up-masking getter (netActive&&!G.warmup), so a blip during queue warm-up skipped the resume entirely and dumped the player back to CHOICE, losing their reserved slot. */
+      if(this.rawActive&&this.room&&this.id&&this.token){
+        this.resumePending={room:this.room,id:this.id,token:this.token,phase:this.started?"match":"lobby"};try{localStorage.setItem("rr_online_session",JSON.stringify(this.resumePending));}catch{}
+        this.reconnecting=true;this.setFlow(this.started?"RECONNECTING_MATCH":"RECONNECTING_LOBBY",this.started?"Connection lost. Restoring your live match…":"Connection lost. Restoring your lobby…",true);this.scheduleReconnect();
+      }else if(this.connectRequested&&this.initialRetryCount<2){
+        this.initialRetryCount++;this.setFlow("CONNECTING",`Connection interrupted. Retrying automatically (${this.initialRetryCount}/2)…`,true);this.scheduleReconnect();
+      }else if(this.connectRequested){
+        this.lastError="SERVER_UNAVAILABLE";const detail=event?.reason?" Server: "+event.reason:"";this.setFlow("ERROR","The online server is unavailable. Check your connection, then retry."+detail,true);
+      }
+    };
+    socket.onerror=()=>{if(!this.active)this.status("The online server did not answer. Retrying the connection…",true);};
+    socket.onmessage=e=>{let m;try{m=JSON.parse(e.data);}catch{return;}this.message(m);};
+  };
+  this.connectPromise=run().finally(()=>{this.connectPromise=null;});
+  return this.connectPromise;
+};
 const _onlineFlowMessage=NET.message.bind(NET);NET.message=function(m){if(m.type==="resumed"&&this.resumePending&&!this.token)this.token=this.resumePending.token;if(m.type==="left"){this.finishLeave(m.context);return;}if(m.type==="error"){if(m.code==="RESUME_FAILED"){this.active=false;this.room=this.id=this.token=null;this.resumePending=null;try{localStorage.removeItem("rr_online_session");}catch{}}this.lastError=m.code;const out=_onlineFlowMessage(m);this.setFlow("ERROR",this.actionableError(m.code),true);return out;}const out=_onlineFlowMessage(m);if(m.type==="ready"){this.handshaken=true;this.initialRetryCount=0;this.reconnectAttempt=0;if(this.resumePending)this.setFlow(this.resumePending.phase==="match"?"RECONNECTING_MATCH":"RECONNECTING_LOBBY","Restoring your reserved slot…");else this.setFlow("CHOICE","Connected. Choose a public match or private room.");}else if(m.type==="joined"||m.type==="resumed"){this.reconnecting=false;this.reconnectAttempt=0;this.persistSession();const phase=m.phase||"lobby";if(phase==="drop"||phase==="match")this.setFlow("RECONNECTING_MATCH","Slot restored. Synchronizing the live match…");else this.setFlow(this.public?"PUBLIC_QUEUED":this.host?"PRIVATE_HOST":"PRIVATE_GUEST",m.type==="resumed"?"Lobby restored. Your socket and room reservation are active.":this.public?"Public staging room found. Bots fill empty slots when the countdown ends.":this.host?"Private room created. Share the six-character code.":"Joined the private room. Ready when you are.");}else if(m.type==="queue_status"){const sec=m.startsAt?Math.max(0,Math.ceil((m.startsAt-Date.now())/1000)):null;this.setFlow("PUBLIC_QUEUED",`PUBLIC MATCH · ${m.players} HUMAN${m.players===1?"":"S"} · ${m.target} COMBATANTS · ${sec===null?"WAITING FOR FIRST HUMAN":`BOT FILL + LAUNCH IN ${sec}s`}`);}else if(m.type==="presence"&&!this.public&&this.onlineFlowState!=="MATCH_ACTIVE")this.setFlow(this.host?"PRIVATE_HOST":"PRIVATE_GUEST",this.host?"You are host. Start when the room is ready.":"Waiting for the host to start.");else if(m.type==="match_started"){this.setFlow("MATCH_ACTIVE");document.getElementById("reconnectOverlay")?.classList.add("hidden");this.persistSession();}else if(m.type==="match_ended")this.setFlow("MATCH_ENDED");return out;};
 const ONLINE_FIGHTER_PORTRAITS={};
 function onlineFighterPortrait(id){
@@ -4321,15 +5362,15 @@ function onlineFighterPortrait(id){
 const ONLINE_FIGHTER_IDS=["jumper","blaster","ninja","builder","tank","skater","mage","demolitionist","jimo","warlord"];
 const ONLINE_FIGHTER_BRIEF={
   jumper:{abilityCd:6,specialCd:8,abilityResult:"vertical escape",specialResult:"air recovery"},
-  blaster:{abilityCd:5,specialCd:8,abilityResult:"armored dash",specialResult:"piercing charge"},
+  blaster:{abilityCd:5,specialCd:8,abilityResult:"short jet launch",specialResult:"piercing charge"},
   ninja:{abilityCd:5,specialCd:6.5,abilityResult:"34 damage slash",specialResult:"blink + melee buff"},
   builder:{abilityCd:2.2,specialCd:3,abilityResult:"150 HP wall",specialResult:"3 hard-light steps"},
   tank:{abilityCd:9,specialCd:10,abilityResult:"40 shield + cover",specialResult:"armored ram"},
-  skater:{abilityCd:4,specialCd:5.5,abilityResult:"invulnerable dash",specialResult:"rail escape"},
-  mage:{abilityCd:6,specialCd:8,abilityResult:"240 px portal",specialResult:"gravity pull"},
+  skater:{abilityCd:4,specialCd:5.5,abilityResult:"235 px board rush",specialResult:"rising rail burst"},
+  mage:{abilityCd:6,specialCd:8,abilityResult:"300 px safe portal",specialResult:"gravity pull"},
   demolitionist:{abilityCd:6,specialCd:8,abilityResult:"34 damage rocket",specialResult:"15 damage launch"},
   jimo:{abilityCd:5,specialCd:6,abilityResult:"22 damage spin dash",specialResult:"homing spring escape"},
-  warlord:{abilityCd:6,specialCd:9,abilityResult:"scaling flame cone",specialResult:"38 damage center slam"}
+  warlord:{abilityCd:6,specialCd:9,abilityResult:"scaling flame cone",specialResult:"leap, then 38 damage center slam"}
 };
 function onlineFighterBrief(classId){
   const c=CLASSES[classId],brief=ONLINE_FIGHTER_BRIEF[classId],mult=Number(c?.cdMult)||1;
@@ -4365,6 +5406,9 @@ function renderOnlineFighterGrid(id){
       }
       playSfx("ui_select",{vol:.45});
     };
+    const mobilityCopy=button.querySelector(".onlineFighterCopy");
+    if(mobilityCopy)mobilityCopy.insertAdjacentHTML("beforeend",`<small class="mobilityTrait">${esc(classMobilityHint(classId))}</small>`);
+    button.setAttribute("aria-label",button.getAttribute("aria-label")+" Mobility: "+classMobilityHint(classId)+".");
     grid.appendChild(button);
   }
   syncOnlineFighterUi();
@@ -4449,6 +5493,7 @@ function buildWarmupArena(){
   ];
 }
 function warmupPlace(e){
+  applyClientMobility(e,makeMobilityState(e.cls,false));e.mobilityInput=null;
   const sp=choice(WARMUP.spawns);
   e.x=sp[0]-e.w/2; e.y=sp[1]-e.h-2; e.py=e.y; e.onGround=false; e.groundRef=null;
 }
@@ -5308,6 +6353,7 @@ function makeEntity(kind, cls, x, y, name){
   const c=CLASSES[cls];
   return {
     kind, cls, name, color:c.c, color2:c.c2,
+    id:"local:"+(++localMobilityActorSeq),...makeMobilityState(cls,false),
     x, y, w:26, h:40, vx:0, vy:0, py:y,
     face:1, onGround:false, blockedX:false,
     hp:c.hp, maxhp:c.hp, shield:0, maxshield:100, alive:true, emote:null, emoteI:0, coins:0,
@@ -5472,6 +6518,7 @@ function addWeaponReserve(e,wid,magazines){
   return add;
 }
 function tryReload(e,wpn){
+  if(offlineMobilityLocked(e,true))return false;
   if(!e||!wpn||!wpn.reload||wpn.melee||e.reloading>0||e.swapping>0) return false;
   if(weaponReserve(e,wpn.id)<=0) return false;
   e.reloading=wpn.reload;
@@ -5489,6 +6536,7 @@ function finishReload(e,wpn){
 }
 function saveWeaponAmmo(e){ const id=e.weapons&&e.weapons[e.wi]; if(id){ e.ammoByWeapon=e.ammoByWeapon||{}; e.ammoByWeapon[id]=Math.max(0,e.ammo||0); } }
 function switchWeapon(e,wi){
+  if(offlineMobilityLocked(e,true))return false;
   if(!e.weapons||e.weapons[wi]===undefined) return false;
   /* WEAPON SWAP: the SELECTION is instant (slot, sprite and HUD change now) but the
      weapon has to be raised before it can fire — authoritative in room.js, mirrored
@@ -5509,6 +6557,7 @@ function switchWeapon(e,wi){
 // reviveT ticking; an ally channels beside them to bring them back. Groundwork
 // only — nothing calls this yet.
 function reviveAlly(reviver, ally){
+  if(offlineMobilityLocked(reviver))return false;
   if(!ally || !ally.downed) return false;
   ally.downed=false; ally.reviveT=0; ally.hp=Math.max(ally.hp,30); ally.alive=true;
   spawnParts(ally.x+ally.w/2, ally.y+ally.h/2, "#31e85a", 16);
@@ -5745,6 +6794,7 @@ function startMatch(){
   TRAVERSAL_TELEMETRY.reset();
   MATCH_METRICS.reset();
   ONBOARD.reset();
+  G.serverResult=null;
   G.ents=[]; G.projs=[]; G.loot=[]; G.crates=[]; G.builds=[]; G.parts=[]; G.beams=[]; G.debris=[]; G.nades=[]; G.traps=[]; G.pads=[]; G.ffields=[];
   const diff=difficulty();
   G.elapsed=0; G.stormPhase=0; G.stormDmg=0; G.nextStorm=STORM_GRACE*diff.grace;
@@ -6054,6 +7104,7 @@ const LEDGE_REACH=10, LEDGE_HAND=8, LEDGE_CHEST=22, LEDGE_COOLDOWN=0.25;
 const WALLJUMP_VY=-780, WALLJUMP_VX=420, WALLJUMP_MAX=3, WALLJUMP_LOCK=0.2, WALLSLIDE_CAP=240;
 function ledgeGrabbable(p){ return p.solid && !p.oneWay && !p.gone && !p.room; }   // solid shells only: one-way decks + pocket-room geometry excluded
 function tryLedgeGrab(e){
+  if(e.mobilityMode||e.jimoWallAscentLock)return;
   if(e.kind!=="player" && e.kind!=="bot") return;
   if(NET.active && !G.warmup && e===G.player) return; // local warm-up remains a full offline simulation
   if(e.ledge || e.onGround || e.vy<=0 || (e.ledgeCd||0)>0) return;
@@ -6109,11 +7160,20 @@ function ledgeHangStep(e, dt){
 function collide(e, dt){
   // LEDGEKIT: hanging entities are pinned to their ledge; skip normal movement
   if(e.ledge){ ledgeHangStep(e, dt); if(e.ledge) return; }
+  const beforeMobility={state:clientMobilityState(e),vx:e.vx,vy:e.vy};
+  const mobilityFrame=offlineMobilityBegin(e,dt);
+  const activeFraction=mobilityFrame?.plan.activeFraction;
+  if(activeFraction>1e-7&&activeFraction<1-1e-7){
+    applyClientMobility(e,beforeMobility.state);e.vx=beforeMobility.vx;e.vy=beforeMobility.vy;e.mobilityFrame=null;
+    const activeDt=dt*activeFraction;collide(e,activeDt);collide(e,dt-activeDt);return;
+  }
+  if(mobilityFrame&&e===G.player&&e.mobilityMode!==beforeMobility.state.mobilityMode)mobilityEntrySound(e.cls,e.mobilityMode);
+  const dashSweep=mobilityFrame&&e.dashTicksRemaining>0?offlineDashSweep(e,e.vx*dt):null;
   // horizontal
   e.blockedX=false; e.wallDir=0;
-  e.x += e.vx*dt;
+  e.x = dashSweep?dashSweep.x:e.x+e.vx*dt;
   for(const p of PLATS){
-    if(p.oneWay) continue;
+    if(p.oneWay||p.gone) continue;
     if(p.bldg) continue;   // the solid roof deck is a floor/ceiling only — never a side wall (the shell rects own that)
     if(aabb(e,p)){
       if(e.vx>0){ e.x=p.x-e.w; e.blockedX=true; if(!p.room && !p.gone) e.wallDir=1; }
@@ -6123,9 +7183,11 @@ function collide(e, dt){
   }
   // build walls block horizontally too
   for(const b of G.builds){
+    if(b.hp<=0||b.solid===false)continue;
     if(aabb(e,b)){
-      if(e.vx>0){ e.x=b.x-e.w; e.blockedX=true; }
-      else if(e.vx<0){ e.x=b.x+b.w; e.blockedX=true; }
+      if(e.vx>0){ e.x=b.x-e.w; e.blockedX=true; e.wallDir=1; }
+      else if(e.vx<0){ e.x=b.x+b.w; e.blockedX=true; e.wallDir=-1; }
+      e.vx=0;
     }
   }
   // SOLID FACADES: building shells block movement; the authored door gap is the only way in.
@@ -6140,10 +7202,12 @@ function collide(e, dt){
     e.vx=0; e.bldgWall=r.B;
   }
   e.x=clamp(e.x, 4, W-e.w-4);
+  if(dashSweep?.hit){e.blockedX=true;e.wallDir=dashSweep.dir;e.vx=0;mobilityFrame.obstacleHit=true;}
 
   // vertical
   e.py=e.y;
-  if(e.climbing){ e.vy=clamp(e.vy,-260,260); }
+  if(Number.isFinite(mobilityFrame?.plan.verticalVelocity)){e.vy=mobilityFrame.plan.verticalVelocity;}
+  else if(e.climbing){ e.vy=clamp(e.vy,-260,260); }
   else { e.vy=clamp(e.vy+GRAV*dt, -2000, MAXFALL);
     // WALLKIT: pressing into a solid wall while falling caps fall speed (wall slide)
     if(e.wallSlide && e.wallDir && e.vy>WALLSLIDE_CAP){ e.vy=WALLSLIDE_CAP;
@@ -6156,22 +7220,24 @@ function collide(e, dt){
     if(!aabb(e,p)) continue;
     if(p.oneWay){
       if(e.dropT>0) continue;
-      if(e.vy>0 && feetPrev<=Math.max(p.y,p.prevTop??p.y)+0.01){ e.landVy=e.vy; e.y=p.y-e.h; e.vy=0; e.onGround=true; e.groundRef=p; }
+      if(e.vy>0 && feetPrev<=Math.max(p.y,p.prevTop??p.y)+0.01){ e.landVy=e.vy; e.y=p.y-e.h; e.vy=0; e.onGround=true; e.groundRef=p;if(mobilityFrame)mobilityFrame.landed=true; }
     } else {
-      if(e.vy>0){ e.landVy=e.vy; e.y=p.y-e.h; e.vy=0; e.onGround=true; e.groundRef=p; }
-      else if(e.vy<0){ e.y=p.y+p.h; e.vy=0; }
+      if(e.vy>0){if(mobilityFrame&&feetPrev<=p.y+.01)mobilityFrame.landed=true;e.landVy=e.vy; e.y=p.y-e.h; e.vy=0; e.onGround=true; e.groundRef=p; }
+      else if(e.vy<0){ e.y=p.y+p.h; e.vy=0;if(mobilityFrame)mobilityFrame.ceilingHit=true; }
     }
   }
   for(const b of G.builds){
+    if(b.hp<=0||b.solid===false)continue;
     if(!aabb(e,b)) continue;
-    if(e.vy>0 && feetPrev<=b.y+0.01){ e.y=b.y-e.h; e.vy=0; e.onGround=true; }
+    if(e.vy>0 && feetPrev<=b.y+0.01){e.landVy=e.vy;e.y=b.y-e.h; e.vy=0; e.onGround=true;e.groundRef=b;if(mobilityFrame)mobilityFrame.landed=true;}
+    else if(e.vy<0&&e.py>=b.y+b.h-3){e.y=b.y+b.h;e.vy=0;if(mobilityFrame)mobilityFrame.ceilingHit=true;}
   }
   // SOLID FACADES (vertical): only the door lintel needs a ceiling — the full-height
   // side walls are resolved horizontally, and giving them a vertical rule would let a
   // rising entity get snapped to the shell floor.
   for(const r of BLDG_SOLIDS){
     if(!r.lintel || !aabb(e,r)) continue;
-    if(e.vy<0){ e.y=r.y+r.h; e.vy=0; }
+    if(e.vy<0){ e.y=r.y+r.h; e.vy=0;if(mobilityFrame)mobilityFrame.ceilingHit=true; }
   }
   // bounce / launch pads - big air deploys a chute so players can choose where to come down
   for(const BP of BOUNCES){
@@ -6192,11 +7258,13 @@ function collide(e, dt){
     }
   }
   if(e.onGround) e.wallJumps=0;   // WALLKIT: ground touch refills wall jumps
+  offlineMobilityFinish(e,mobilityFrame);
   tryLedgeGrab(e);                // LEDGEKIT: falling past a solid lip snaps into a hang
 }
 
 /* ---------------- Combat ---------------- */
 function fire(e, aimX, aimY){
+  if(offlineMobilityLocked(e,true))return;
   if(isDriving(e)) return;   // CAR OCCUPANCY: hands on the wheel — the driver cannot shoot or melee
   if(e.swapping>0) return;   // WEAPON SWAP: still raising — mirrors the room.js fire gate
   const wpn=curWeapon(e); if(!wpn) return;
@@ -6542,10 +7610,9 @@ function applyDamage(e,dmg,from,source=null){
     if(e.kind==="player") toast("◈ SPAWN SHIELD BROKEN"); return; }   // landing spawn-shield: the FIRST hit is absorbed and pops it
   const megaHit=!!(e.pu&&e.pu.id==="mega");
   if(e.bull) dmg*=0.4;      // Bull Rush armored charge (-60%)
-  if(e.softT>0) dmg*=0.7;   // brief airborne-from-impulse/pad damage falloff (mobility = defense)
   if(megaHit) dmg*=0.7;
-  if(from && from.cls && CLASSES[from.cls]) dmg*=(CLASSES[from.cls].power||1);   // attacker class POWER
-  if(e.cls && CLASSES[e.cls]) dmg*=(CLASSES[e.cls].armor||1);                    // victim class TOUGHNESS
+  // Class damage is uniform, matching server authority. Named ability armor
+  // remains explicit above; practice does not grant hidden class bonuses.
   if(from) from.damage+=dmg;
   if((e===G.player||from===G.player)&&MATCH_METRICS.firstContact===null) MATCH_METRICS.firstContact=G.elapsed;
   if(from===G.player&&source?.kind==="weapon"&&source.id){ const m=MATCH_METRICS.weapon(source.id); m.hits++; m.damage+=dmg; }
@@ -6556,6 +7623,7 @@ function applyDamage(e,dmg,from,source=null){
   if(e.shield>0){ const s=Math.min(e.shield,dmg); e.shield-=s; dmg-=s; e.shieldBlocked=(e.shieldBlocked||0)+s;
     if(e===G.player && e.shield<=0) dirEvent(0.30); }   // director: shield break
   e.hp-=dmg; e.dmgTaken=(e.dmgTaken||0)+dmg;
+  if(beforeDamage-((e.shield||0)+e.hp)>0)offlineMobilityDamage(e);
   if(megaHit&&beforeDamage-((e.shield||0)+e.hp)>0) removePowerup(e,true);
   if(e===G.player && dmg>0) dirEvent(clamp(0.10+dmg*0.005,0.10,0.30));   // director: damage taken, scaled
   if(from===G.player && dmg>=1 && e!==G.player){
@@ -6808,7 +7876,7 @@ function useSpecial(e,c){
     const bx0 = e.face>0? e.x+e.w+6 : e.x-6;
     for(let i=0;i<3;i++){
       const sx = e.face>0? bx0+i*44 : bx0-(i+1)*44;
-      G.builds.push({ x:clamp(sx,0,W-44), y:e.y+e.h-14-(i+1)*34, w:44, h:14, hp:50, maxhp:50, decay:20, born:G.elapsed, solid:true, ramp:true });
+      G.builds.push({ x:clamp(sx,0,W-44), y:e.y+e.h-14-(i+1)*34, w:44, h:14, hp:50, maxhp:50, decay:20, born:G.elapsed, solid:true, ramp:true,id:"local-build:"+(++localMobilityBuildSeq),owner:e.id });
     }
     e.abilityCd=3; spawnParts(e.x+e.w/2,e.y+e.h/2,"#ffb000",12); return true;
   }
@@ -6817,7 +7885,7 @@ function useSpecial(e,c){
     spawnParts(e.x+e.w/2,e.y+e.h/2,"#6abe30",12); return true;
   }
   if(s==="Rail Grind"){                         // Skater (up): rail arc burst + 0.4s i-frames (escape)
-    e.vx=e.face*1050; e.vy=Math.min(e.vy,-260); e.iframes=0.4; e.abilityCd=5.5;
+    offlineStartDash(e,MOBILITY_MODE.RAIL_GRIND);e.abilityCd=5.5;
     if(G.rings) G.rings.push({ x:e.x+e.w/2, y:e.y+e.h, r:10, t:0.4, c:"#b84dff", sp:300, lw:3 });
     spawnParts(e.x+e.w/2,e.y+e.h,"#31e85a",14); return true;
   }
@@ -6840,23 +7908,15 @@ function useSpecial(e,c){
     for(const t of G.ents){ if(!t.alive||t===e) continue; const d=dist(t.x+t.w/2,t.y+t.h/2,e.x+e.w/2,e.y+e.h/2); if(d<bd){bd=d;best=t;} }
     e.vy=-1150; e.onGround=false;
     if(best && bd<540){ const s2=Math.sign((best.x-e.x)||e.face)||1; e.vx=s2*660; e.face=s2; } else { e.vx=e.face*320; }
-    e.iframes=0.25; e.abilityCd=6;
+    offlineStartDash(e,MOBILITY_MODE.SPRING_HOP,e.face);e.abilityCd=6;
     if(G.rings) G.rings.push({ x:e.x+e.w/2, y:e.y+e.h, r:8, t:0.3, c:c.c2, sp:280, lw:3 });
     spawnParts(e.x+e.w/2,e.y+e.h,c.c,12); return true;
   }
   if(s==="Ground Pound"){
-    const cx=e.x+e.w/2, cy=e.y+e.h;
-    for(const t of G.ents){ if(!t.alive||t===e) continue;
-      const d=dist(t.x+t.w/2,t.y+t.h/2,cx,cy);
-      if(d<150){ applyDamage(t, 12+26*(1-d/150), e); t.vx+=(Math.sign((t.x-e.x))||1)*260; t.vy=Math.min(t.vy,-280); t.onGround=false; abilityHit(t.x+t.w/2,t.y+t.h/2,"#ff7a1a"); } }
-    try{ carveTerrain(cx, cy+8, 30); }catch(_e){}
-    if(G.shakeOn) G.shake=Math.min(16,(G.shake||0)+8);
-    if(G.rings) G.rings.push({ x:cx, y:cy, r:10, t:0.4, c:c.c2, sp:520, lw:5 });
-    for(let k=0;k<26 && G.parts.length<600;k++){ const ga=Math.PI+Math.random()*Math.PI;
-      G.parts.push({ x:cx+rand(-44,44), y:cy, vx:Math.cos(ga)*rand(90,340), vy:rand(-180,-20), life:rand(0.4,0.85), color:k%3?"#c9b79a":c.c2, r:rand(2,5), smoke:k%2 }); }
-    if(G.rings) G.rings.push({ x:cx, y:cy, r:6, t:0.28, c:"#fff2c0", sp:660, lw:3 });
-    if(e===G.player){ if(G.shakeOn) G.shake=Math.min(22,(G.shake||0)+6); if(!G.reducedFlash) G.flashT=Math.max(G.flashT||0,0.06); }
-    e.abilityCd=9; return true;
+    const cast=armGroundPound(clientMobilityState(e),{classId:e.cls,grounded:!!(e.onGround&&e.groundRef),conflictingControl:!!(e.stunT>0||e.climbing),cooldownActive:e.abilityCd>0});
+    if(!cast.accepted)return false;
+    applyClientMobility(e,cast.state);e.vy=cast.verticalVelocity;e.onGround=false;e.coyoteT=0;e.jumpBufT=0;e.abilityCd=9;
+    spawnParts(e.x+e.w/2,e.y+e.h,c.c2,12);return true;
   }
   return false;
 }
@@ -6872,6 +7932,8 @@ function safeTeleport(e,dx,dy){
   return {x:bx,y:by};
 }
 function useAbility(e, dir){
+  if(offlineMobilityLocked(e)||e.stunT>0||e.climbing)return;
+  if(e.cls==="warlord"&&dir==="up"&&!(e.onGround&&e.groundRef))return;
   if(isDriving(e)) return;   // CAR OCCUPANCY: driver has no free hands
   if(e.abilityCd>0 || e.chargeCast || e.bull) return;
   if(e.ledge) return;   // LEDGEKIT: hands are busy while hanging (climb or drop first)
@@ -6880,15 +7942,15 @@ function useAbility(e, dir){
   if(dir && dir===cl.specialDir && useSpecial(e, cl)){ e.abilityCd*=(cl.cdMult||1); abilityJuice(e, cl.c); if(e.kind==="player") SFX.ability(); return; }
   const a=CLASSES[e.cls].ability;
   if(a==="Power Jump"){ e.vy=-1500; e.abilityCd=6; spawnParts(e.x+e.w/2,e.y+e.h,"#ff3b3b",12); }
-  else if(a==="Energy Dash"){ e.vx=e.face*720; e.vy=Math.min(e.vy,-120); e.iframes=0.35; e.abilityCd=5;
+  else if(a==="Jet Burst"){offlineStartDash(e,MOBILITY_MODE.JET_BURST);e.abilityCd=5;
     spawnParts(e.x+e.w/2,e.y+e.h/2,"#00c8ff",14); }
   else if(a==="Build Wall"){
     const wx = e.face>0? e.x+e.w+8 : e.x-56;
-    G.builds.push({ x:clamp(wx,0,W-52), y:e.y-58, w:52, h:120, hp:150, maxhp:150, decay:22, born:G.elapsed, solid:true });
+    G.builds.push({ x:clamp(wx,0,W-52), y:e.y-58, w:52, h:120, hp:150, maxhp:150, decay:22, born:G.elapsed, solid:true,id:"local-build:"+(++localMobilityBuildSeq),owner:e.id });
     e.abilityCd=2.2;
   }
   else if(a==="Dash Slash"){
-    e.vx=e.face*860; e.iframes=0.3; e.abilityCd=5;
+    offlineStartDash(e,MOBILITY_MODE.DASH_SLASH);e.abilityCd=5;
     // slash everything in the dash lane
     for(const t of G.ents){ if(!t.alive||t===e) continue;
       const dx=(t.x+t.w/2)-(e.x+e.w/2), dy=Math.abs((t.y+t.h/2)-(e.y+e.h/2));
@@ -6901,17 +7963,17 @@ function useAbility(e, dir){
     G.builds.push({ x:clamp(wx,0,W-70), y:e.y-30, w:70, h:76, hp:220, maxhp:220, decay:16, born:G.elapsed, solid:true });
     e.abilityCd=9; spawnParts(e.x+e.w/2,e.y+e.h/2,"#6abe30",12);
   }
-  else if(a==="Hover Dash"){
-    e.vx=e.face*940; e.vy=Math.min(e.vy,-160); e.iframes=0.2; e.abilityCd=4;
+  else if(a==="Board Rush"){
+    offlineStartDash(e,MOBILITY_MODE.BOARD_RUSH);e.vy=Math.min(e.vy,-160);e.abilityCd=4;
     spawnParts(e.x+e.w/2,e.y+e.h/2,"#b84dff",10); spawnParts(e.x+e.w/2,e.y+e.h,"#31e85a",8);
   }
   else if(a==="Portal Gate"){
     const ap=aimPoint(e);
     const ang=Math.atan2(ap.y-(e.y+e.h/2), ap.x-(e.x+e.w/2));
-    const d=Math.min(240, dist(e.x+e.w/2,e.y+e.h/2,ap.x,ap.y));
+    const d=Math.min(300, dist(e.x+e.w/2,e.y+e.h/2,ap.x,ap.y));
     spawnParts(e.x+e.w/2,e.y+e.h/2,"#8a5cff",14);
     const dest=safeTeleport(e,Math.cos(ang)*d,Math.sin(ang)*d); e.x=dest.x; e.y=dest.y;
-    e.vy=Math.min(e.vy,0); e.iframes=0.25; e.abilityCd=6;
+    e.vy=Math.min(e.vy,0); e.iframes=0.20; e.abilityCd=6;
     spawnParts(e.x+e.w/2,e.y+e.h/2,"#ffd166",14);
   }
   else if(a==="Rocket Burst"){
@@ -6923,7 +7985,7 @@ function useAbility(e, dir){
     e.abilityCd=6;
   }
   else if(a==="Spin Dash"){
-    e.vx=e.face*1000; e.vy=Math.min(e.vy,-40); e.iframes=0.3; e.abilityCd=5;
+    offlineStartDash(e,MOBILITY_MODE.SPIN_DASH);e.vy=Math.min(e.vy,-40);e.abilityCd=5;
     for(const t of G.ents){ if(!t.alive||t===e) continue;
       const dx=(t.x+t.w/2)-(e.x+e.w/2), dy=Math.abs((t.y+t.h/2)-(e.y+e.h/2));
       if(dy<48 && dx*e.face>0 && Math.abs(dx)<130){ applyDamage(t, 22, e); t.vx+=e.face*240; t.onGround=false; abilityHit(t.x+t.w/2,t.y+t.h/2,cl.c); } }
@@ -6944,6 +8006,7 @@ function useAbility(e, dir){
   if(e.kind==="player") SFX.ability();
 }
 function useHeal(e){
+  if(offlineMobilityLocked(e))return;
   if(e.useCd>0 || e.channel) return;
   if(e.medkits>0 && e.hp<e.maxhp){
     e.channel={ t:2.5, total:2.5, kind:"medkit" };
@@ -6953,6 +8016,7 @@ function useHeal(e){
   if(e.heals>0 && e.hp<e.maxhp){ e.heals--; e.itemsUsed++; e.hp=Math.min(e.maxhp,e.hp+CONSUMABLES.heal.amount); e.useCd=1; heff(e); return; }
 }
 function useNano(e){
+  if(offlineMobilityLocked(e))return;
   if(e.useCd>0 || e.channel) return;
   if((e.nanos||0)>0 && (e.hp<e.maxhp || e.shield<e.maxshield) && e.regenT<=0){
     e.channel={ t:1.2, total:1.2, kind:"nano" };
@@ -6960,6 +8024,7 @@ function useNano(e){
   }
 }
 function useShield(e){
+  if(offlineMobilityLocked(e))return;
   if(e.useCd>0) return;
   if(e.shields>0 && e.shield<e.maxshield){ e.shields--; e.itemsUsed++; e.shield=Math.min(e.maxshield,e.shield+CONSUMABLES.shield.amount); e.useCd=1; heff(e,"#00d9ff","shield_drink"); return; }
   if(e.bigshields>0 && e.shield<e.maxshield && !e.channel){
@@ -6983,7 +8048,7 @@ function pickupLoot(e){
     const l=G.loot[i];
     if(aabb(e,{x:l.x,y:l.y,w:l.w,h:l.h})){
       if(l.kind==="powerup"){ applyPowerup(e, l.id); }
-      else if(l.kind==="weapon"){ giveWeapon(e,l.id); e.swapping=weaponSwapTime(l.id);   // a pickup auto-equips, and an auto-equip is a raise (room.js giveLoot does the same)
+      else if(l.kind==="weapon"){ giveWeapon(e,l.id); e.swapping=weaponSwapTime(l.id);   // a pickup auto-equips, and an auto-equip is a raise (room.js giveLoot does the same)
         if(e.kind==="player"){ const wm=MATCH_METRICS.weapon(l.id); wm.pickups++; if(!MATCH_METRICS.firstGun) MATCH_METRICS.firstGun={id:l.id,t:G.elapsed}; toast(l.name+" — "+(ITEM_INFO[l.id]?ITEM_INFO[l.id].d:"")); pickupSfx(l.rarity); } }
       else if(l.kind==="ammo"){
         addWeaponReserve(e,l.weapon,l.magazines);
@@ -7143,7 +8208,7 @@ function stepCombatTimers(e,dt){
       } else e.burst=null;
     }
   }
-  if(e.swapping>0) e.swapping=Math.max(0,e.swapping-dt);
+  if(e.swapping>0) e.swapping=Math.max(0,e.swapping-dt);
   if(e.reloading>0){ e.reloading-=dt; if(e.reloading<=0){ const w=curWeapon(e); if(w){ finishReload(e,w); } } }
   if(e._dryT>0) e._dryT-=dt;
 }
@@ -7599,6 +8664,7 @@ function cycleWeaponSkin(e){
   return true;
 }
 function throwNade(e, type){
+  if(offlineMobilityLocked(e))return;
   if(isDriving(e)) return;   // CAR OCCUPANCY: driver has no free hands
   if(e.useCd>0) return;
   type = type || curNadeType(e);
@@ -7688,6 +8754,7 @@ function stepNades(dt){
   }
 }
 function placeTrap(e){
+  if(offlineMobilityLocked(e))return;
   if(e.traps<=0 || e.useCd>0 || !e.onGround) return;
   e.traps--; e.itemsUsed++; e.useCd=0.5;
   G.traps.push({ x:e.x+e.w/2-30, y:e.y+e.h-24, w:60, h:24, arm:1, owner:e, glow:0 });
@@ -7718,6 +8785,7 @@ function stepTraps(dt){
   }
 }
 function placePad(e){
+  if(offlineMobilityLocked(e))return;
   if(e.padkits<=0 || e.useCd>0 || !e.onGround) return;
   e.padkits--; e.itemsUsed++; e.useCd=0.5;
   G.pads.push({ x:e.x+e.w/2-40, y:e.y+e.h-10, w:80, h:12, glow:0 });
@@ -7727,6 +8795,7 @@ function placePad(e){
 /* ---------------- FORCE FIELD GENERATOR: epic deployable dome (membrane, not armor) ---------------- */
 const FF_R=170, FF_DUR=18, FF_HP=150, FF_SPIN=0.8;
 function placeForcefield(e){
+  if(offlineMobilityLocked(e))return;
   if((e.forcefields||0)<=0 || e.useCd>0 || !e.onGround) return;
   e.forcefields--; e.itemsUsed++; e.useCd=0.5;
   G.ffields.push({ x:e.x+e.w/2, y:e.y+e.h, r:FF_R, hp:FF_HP, maxhp:FF_HP, spin:FF_SPIN, life:FF_DUR, owner:e, glow:0, rippleT:0, ripples:[] });
@@ -7783,6 +8852,7 @@ function stepForcefields(dt){
   }
 }
 function placeModWall(e){
+  if(offlineMobilityLocked(e))return;
   if(e.mods>0 && e.useCd<=0){
     e.mods--; e.itemsUsed++;
     const wx = e.face>0? e.x+e.w+8 : e.x-56;
@@ -7864,6 +8934,7 @@ function handleKey(k){
 const EJECT_GRACE=1.0;   // seconds after match start before an eject press counts (kills stale menu-click ejects)
 function ejectInputReady(){ return G.elapsed>=EJECT_GRACE; }
 function interact(p){
+  if(offlineMobilityLocked(p))return;
   if(p.riding){ if(ejectInputReady()) p.dropRequested=true; return; }
   if(p.gliding){ toggleChute(p); return; }
   if(p.car){ exitCar(p); return; }
@@ -7899,6 +8970,7 @@ function controlPlayer(p, dt){
   const c=CLASSES[p.cls];
   if(p.zipping) return; // zip handled separately
   const ti=traversalInput(), ax=ti.ax;
+  p.mobilityInput={ax,climb:ti.climb,left:ax<-.15,right:ax>.15,up:ti.climb<-.15,jump:!!ti.jump&&!p.jumpHeld,jumpHeld:!!ti.jump};
   if(Math.abs(ax)>0.35) ONBOARD.event("move");
   p.ads = !!(mouse.rdown || keys["shift"] || ti.ads);
   const target=ax*c.speed*(p.spdMul||1)*(p.ads?0.55:1);
@@ -8659,6 +9731,7 @@ function update(dt){
   }
   // physics + timers for all
   for(const e of G.ents){
+    if((e.kind==="player"||e.kind==="bot")&&!(NET.active&&!G.warmup)&&(e.mobilityMode||e.groundPoundArmed||e.jimoWallAscentLock)&&(!e.alive||e.downed||e.riding||e.gliding||e.car||e.zipping||e.tubing||e.grapple||e.ledge||e.stunT>0))offlineCancelMobility(e);
     if(!e.alive) continue;
     if(NET.active&&!G.warmup&&e===G.player) continue;
     if(e.zipping){
@@ -10866,7 +11939,7 @@ function spriteFootRect(x,y,w,h,sw,sh){
 function drawEntity(e){
   const bob = e.onGround? Math.sin(G.t*10+ (e.x))* (Math.abs(e.vx)>30?1.5:0) : 0;
   const x=e.x, y=e.y+bob, w=e.w, h=e.h, cx=x+w/2;
-  const flash=entityHurtActive(e),casting=entityCastActive(e),weaponFiring=entityWeaponFireActive(e);
+  const flash=entityHurtActive(e),casting=entityCastActive(e),weaponFiring=entityWeaponFireActive(e),mobilityPose=MOBILITY_PRESENTATION[e.mobilityMode];
   ctx.save();
   // parachute canopy - open (steerable, pass-through) vs cutting away (falling free)
   if(e.gliding){
@@ -10891,6 +11964,8 @@ function drawEntity(e){
   // shadow
   ctx.globalAlpha=0.3; ctx.fillStyle="#000"; ctx.beginPath();
   ctx.ellipse(cx, e.y+h+2, w*0.5, 4, 0,0,6.28); ctx.fill(); ctx.globalAlpha=1;
+  drawMobilityTrail(ctx,e,G.t*1000,{reducedMotion:PREFS.get("reducedMotion"),reducedFlash:G.reducedFlash});
+  if(e.mobilityLandingFx){if(!drawMobilityLandingFootprint(ctx,e.mobilityLandingFx,G.t*1000,{reducedMotion:!!PREFS.get("reducedMotion"),reducedFlash:!!PREFS.get("reducedFlash")}))e.mobilityLandingFx=null;}
 
   ctx.save(); ctx.translate(cx,0); ctx.scale(e.face,1); ctx.translate(-cx,0);
   // storm silhouette: entities caught outside the safe zone render their OWN
@@ -10899,6 +11974,7 @@ function drawEntity(e){
   // pick sprite pose — full 8-pose contract: idle run1 run2 jump fall attack hurt climb
   let pose="idle";
   if(flash && !stormSil) pose="hurt";   // storm ticks refresh hurtFlash forever; keep movement poses readable
+  else if(mobilityPose)pose=mobilityPose.pose==="run"?(Math.floor(G.t*9)%2?"run1":"run2"):mobilityPose.pose;
   else if(casting||weaponFiring) pose="attack";       // authoritative online fire briefly owns the attack pose; the held weapon keeps its muzzle flash
   else if(e.climbing || e.ledge || (e.ledgePoseT||0)>0) pose="climb";   // LEDGEKIT: hang + mantle reuse the climb pose
   else if(!e.onGround) pose = e.vy>260? "fall":"jump";
@@ -10934,7 +12010,7 @@ function drawEntity(e){
   ctx.shadowBlur=0;
   ctx.restore();
   // held weapon: rotates 360° with aim (skinned)
-  if(!casting)drawHeldWeapon(e,y);
+  if(!casting&&mobilityPose?.weaponVisible!==false)drawHeldWeapon(e,y);
 
   // Remote Riot Tags remain readable against world art; bots stay deliberately
   // muted so human rivals are identifiable at combat speed.
@@ -11082,22 +12158,26 @@ function currentObjective(p){
 }
 function drawObjectiveDirector(p){
   if(!p.alive||G.spectating||G.regionBanner||G.poiReveal) return;
+  if(typeof WOW!=="undefined"&&WOW.banners.some(b=>b.t>0)) return;
+  // At compact canvas widths, center cards extend into the corner HUD. Put
+  // them below its 12..108 minimap band instead of painting beneath the map.
+  const calloutY=w=>(VIEW_W/2+w/2>VIEW_W-260||VIEW_W/2-w/2<208)?116:66;
   const training=(!p.riding&&!p.gliding)?ONBOARD.current():null;
   if(training){
-    const w=390,h=56,x=VIEW_W/2-w/2,y=66;
+    const w=390,h=56,x=VIEW_W/2-w/2,y=calloutY(w);
     ctx.save();
     ctx.fillStyle="rgba(5,8,24,.91)"; roundRect(x,y,w,h,8); ctx.fill();
     ctx.strokeStyle=training.c; ctx.globalAlpha=.78+.12*Math.sin(G.t*4); ctx.lineWidth=2; roundRect(x,y,w,h,8); ctx.stroke(); ctx.globalAlpha=1;
     ctx.textAlign="center"; ctx.fillStyle=training.c; ctx.shadowColor=training.c; ctx.shadowBlur=7;
     ctx.font="bold 10px 'Rajdhani'"; ctx.fillText(training.k,x+w/2,y+15); ctx.shadowBlur=0;
-    ctx.fillStyle="#eef4ff"; ctx.font="bold 13px 'Rajdhani'"; ctx.fillText(padActive()?training.pad:training.kb,x+w/2,y+34);
+    ctx.fillStyle="#eef4ff"; ctx.font="bold 13px 'Rajdhani'"; ctx.fillText(trainingText(training),x+w/2,y+34);
     ctx.fillStyle="#7890ba"; ctx.font="9px 'Rajdhani'"; ctx.fillText((padActive()?"VIEW / SELECT":"X")+"  SKIP TRAINING",x+w/2,y+49);
     ctx.restore();
     return;
   }
   if(G.traversalRun){
     const rr=G.traversalRun, c=TRAVERSAL_COURSES.find(v=>v.id===rr.id); if(!c) return;
-    const w=330,h=52,x=VIEW_W/2-w/2,y=66, gold=rr.t<=c.par;
+    const w=330,h=52,x=VIEW_W/2-w/2,y=calloutY(w), gold=rr.t<=c.par;
     ctx.save(); ctx.fillStyle="rgba(5,8,24,.9)"; roundRect(x,y,w,h,7); ctx.fill();
     ctx.strokeStyle=c.c; ctx.globalAlpha=.82; ctx.lineWidth=2; roundRect(x,y,w,h,7); ctx.stroke(); ctx.globalAlpha=1;
     ctx.textAlign="center"; ctx.fillStyle=c.c; ctx.shadowColor=c.c; ctx.shadowBlur=7; ctx.font="bold 12px 'Rajdhani'";
@@ -11108,7 +12188,7 @@ function drawObjectiveDirector(p){
     return;
   }
   if(G.nearTraversalCourse){
-    const c=G.nearTraversalCourse, w=390,h=48,x=VIEW_W/2-w/2,y=66;
+    const c=G.nearTraversalCourse, w=390,h=48,x=VIEW_W/2-w/2,y=calloutY(w);
     ctx.save(); ctx.fillStyle="rgba(5,8,24,.91)"; roundRect(x,y,w,h,8); ctx.fill();
     ctx.strokeStyle=c.c; ctx.lineWidth=2; roundRect(x,y,w,h,8); ctx.stroke();
     ctx.textAlign="center"; ctx.fillStyle=c.c; ctx.font="bold 12px 'Rajdhani'"; ctx.fillText("RIOT RUN · "+c.name,x+w/2,y+16);
@@ -11116,7 +12196,7 @@ function drawObjectiveDirector(p){
     return;
   }
   const o=currentObjective(p); if(!o) return;
-  const w=330,h=42,x=VIEW_W/2-w/2,y=66;
+  const w=330,h=42,x=VIEW_W/2-w/2,y=calloutY(w);
   ctx.save();
   ctx.fillStyle="rgba(5,8,24,.82)"; roundRect(x,y,w,h,7); ctx.fill();
   ctx.strokeStyle=o.c; ctx.globalAlpha=.68; ctx.lineWidth=1.5; roundRect(x,y,w,h,7); ctx.stroke(); ctx.globalAlpha=1;
@@ -11154,7 +12234,9 @@ function netAliveUnits(){
 }
 function combatHudLayout(p){
   const chips=(p&&p.pu?1:0)+(p&&p.regenT>0?1:0),chipY=COMBAT_HUD_LEFT.y+COMBAT_HUD_LEFT.h+COMBAT_HUD_LEFT.gap,teammate=netDuoTeammate(),duoY=chipY+chips*(COMBAT_HUD_LEFT.chipH+COMBAT_HUD_LEFT.chipGap);
-  return {status:{x:COMBAT_HUD_LEFT.x,y:COMBAT_HUD_LEFT.y,w:COMBAT_HUD_LEFT.w,h:COMBAT_HUD_LEFT.h},chipY,chips,duoY,teammate,feedY:duoY+(teammate?DUO_HUD_LEFT.h+DUO_HUD_LEFT.gap:0)};
+  const inventoryY=VIEW_H-58,ammoY=inventoryY-10,lowerHudTop=inventoryY-60;
+  const toastBottomCss=Math.max(12,innerHeight-(canvasCssTop+(offY+lowerHudTop*scale)/DPR)+10);
+  return {status:{x:COMBAT_HUD_LEFT.x,y:COMBAT_HUD_LEFT.y,w:COMBAT_HUD_LEFT.w,h:COMBAT_HUD_LEFT.h},chipY,chips,duoY,teammate,inventoryY,ammoY,lowerHudTop,toastBottomCss,feedY:duoY+(teammate?DUO_HUD_LEFT.h+DUO_HUD_LEFT.gap:0)};
 }
 function drawDuoHUD(layout={}){
   const teammate=layout.teammate||netDuoTeammate();if(!teammate)return false;
@@ -11320,6 +12402,7 @@ function drawHUD(){
 
   // ---- bottom center: weapon + ammo + inventory ----
   drawInventory(p);
+  drawMobilityHUD(p);
 
   // ---- bottom right: ability + consumables ----
   if(!touchUIActive()){
@@ -11395,7 +12478,7 @@ function drawHUD(){
     ctx.fillStyle="rgba(8,10,28,0.88)"; roundRect(VIEW_W/2-190, 64, 380, 58, 8); ctx.fill();
     ctx.strokeStyle="rgba(255,157,176,0.5)"; ctx.lineWidth=1.5; ctx.strokeRect(VIEW_W/2-190, 64, 380, 58);
     ctx.fillStyle="#ff9db0"; ctx.font="bold 15px 'Rajdhani'";
-    ctx.fillText("YOU PLACED #"+(p.placement||"?")+" — "+(p.downedBy||"THE STORM").toUpperCase()+" TOOK YOU DOWN", VIEW_W/2, 84);
+    ctx.fillText("YOU PLACED #"+(p.placement||"?")+" — "+eliminationSummary(p), VIEW_W/2, 84);
     ctx.fillStyle="#c8d6f5"; ctx.font="bold 13px 'Rajdhani'";
     ctx.fillText("SPECTATING  ◀ "+(w? w.name:"—")+" ▶", VIEW_W/2, 102);
     ctx.fillStyle="#7f93bd"; ctx.font="11px 'Rajdhani'";
@@ -11446,7 +12529,7 @@ function fmtTime(s){ const m=Math.floor(s/60), ss=Math.floor(s%60); return m+":"
 
 function drawInventory(p){
   const onlineMatch=NET.active&&!G.warmup,slotW=46, gap=8, n=onlineMatch?3:4, totW=n*slotW+(n-1)*gap;   // local warm-up uses the full local loadout model
-  const x0=VIEW_W/2-totW/2, y=VIEW_H-58;
+  const layout=combatHudLayout(p),x0=VIEW_W/2-totW/2, y=layout.inventoryY;
   for(let i=0;i<n;i++){
     const x=x0+i*(slotW+gap);
     const wid=p.weapons[i];
@@ -11472,7 +12555,7 @@ function drawInventory(p){
   const wpn=curWeapon(p);
   if(wpn){
     ctx.textAlign="center"; ctx.font="bold 16px 'Rajdhani'";
-    const ax=VIEW_W/2, ay=y-10;
+    const ax=VIEW_W/2, ay=layout.ammoY;
     if(p.swapping>0){ ctx.fillStyle="#8ab4ff"; ctx.fillText("RAISING…", ax, ay); }
     else if(wpn.melee){ ctx.fillStyle="#eaf2ff"; ctx.fillText("∞", ax, ay); }
     else if(p.reloading>0){ ctx.fillStyle="#ffb000"; ctx.fillText("RELOADING…", ax, ay); }
@@ -11625,6 +12708,7 @@ function showScreen(s){
 function setPaused(v){
   if(v!==G.paused && G.state==="match") playSfx(v?"ui_move":"ui_back",{vol:0.5});   // pause open -> ui_move, close -> ui_back
   G.paused=v;
+  if(v){clearGameplayInput();if(NET.active){NET.weaponQueued=false;NET.sendT=0;}}
   try{
     document.getElementById("pauseScreen").classList.toggle("hidden", !v);
     if(v){
@@ -11718,10 +12802,11 @@ const CONTROL_ROWS=[
   ["Launch pad","Y","LT + D-PAD ▼"], ["Interact / pick up","E","B / ○"],
   ["Emote","X","SELECT"], ["Weapon finish","L","LT + SELECT"], ["Pause","P / Esc","OPTIONS"] ];
 function controlRowsHtml(pad){
-  const esc=z=>String(z).replace(/&/g,"&amp;").replace(/</g,"&lt;");
-  return CONTROL_ROWS.map(([a,kb,gp])=>`<div class="pRow"><span style="min-width:150px;color:#eaf2ff">${a}</span>`+
-    `<span style="min-width:200px;color:${pad? '#5b6690':'#00d9ff'}">${esc(kb)}</span>`+
-    `<span style="color:${pad? '#00d9ff':'#5b6690'}">${esc(gp)}</span></div>`).join("");
+  const esc=z=>String(z).replace(/&/g,"&amp;").replace(/</g,"&lt;"),ps=controllerFamily()==="ps",g=PAD_GLYPHS[ps?"ps":"xbox"];
+  const binding={Jump:g.W,"Drop through":"Stick ↓ + "+g.W,Fire:g.J,"Wall / ledge":"Stick toward wall + "+g.W,"Aim mode":"Hold "+(ps?"L2":"LT"),Weapons:g["1/2/3"]+" cycles all",Ability:g.Q+" · +stick dir = special",Heal:g.C,Reload:g.R,Shield:g.V,Wall:g.B,Throw:g.G,"Swap throwable":g.F,"Nano Surge":g.N,"Spike trap":g.T,"Launch pad":g.Y,"Interact / pick up":g.E,Emote:g.X,"Weapon finish":(ps?"L2":"LT")+" + "+g.X,Pause:g.P};
+  const rows=CONTROL_ROWS.map(([name,kb,gp])=>[name,kb,binding[name]||gp]);
+  for(const [id,c] of Object.entries(CLASSES))rows.push([c.name+" mobility",classMobilityHint(id,false),classMobilityHint(id,true)]);
+  return rows.map(([a,kb,gp])=>'<div class="pRow" style="flex-wrap:wrap;gap:8px"><span style="min-width:150px;color:#eaf2ff">'+esc(a)+'</span><span style="flex:1;min-width:200px;color:'+(pad?'#8895b6':'#00d9ff')+'">'+esc(kb)+'</span><span style="flex:1;min-width:200px;color:'+(pad?'#00d9ff':'#8895b6')+'">'+esc(gp)+'</span></div>').join("");
 }
 /* ---------------- Controls overlay (diagram + keyboard bindings) ---------------- */
 let CTRLS_OPEN=false, MODAL_RETURN_FOCUS=null;
@@ -11801,7 +12886,7 @@ function leaveSpectate(){
   G.spectating=false; G.specTarget=null;
   if(!G.careerLogged){ G.careerLogged=true; G.matchXpEarned=CAREER.add(false,G.player.kills,G.player.placement||G.aliveStart); }
   SFX.lose(); showScreen("defeat");
-  document.getElementById("dSub").textContent = "YOU PLACED #"+(G.player.placement||"?")+" — "+(G.player.downedBy||"THE STORM").toUpperCase()+" TOOK YOU DOWN";
+  document.getElementById("dSub").textContent = "YOU PLACED #"+(G.player.placement||"?")+" — "+eliminationSummary(G.player);
   fillStats("dStats", G.player); showEndPOIRecap(); confetti=false;
 }
 function endMatch(win, who){
@@ -11811,19 +12896,28 @@ function endMatch(win, who){
     // confetti
     confetti=true; confettiBurst(); try{ wowCountUp(document.getElementById("vStats")); }catch(err){} }
   else { SFX.lose(); showScreen("defeat");
-    document.getElementById("dSub").textContent = "ELIMINATED BY "+(who.downedBy||"THE STORM").toUpperCase();
+    document.getElementById("dSub").textContent = eliminationSummary(who);
     fillStats("dStats", who); showEndPOIRecap(); confetti=false;
     try{ wowCountUp(document.getElementById("dStats")); }catch(err){} }
 }
+function eliminationSummary(e){
+  if(NET.active){
+    const name=e.netMatchStats?.eliminatedBy;
+    return name?"ELIMINATED BY "+String(name).toUpperCase():"ELIMINATED";
+  }
+  return "ELIMINATED BY "+(e.downedBy||"THE STORM").toUpperCase();
+}
 function fillStats(id, e){
   const el=document.getElementById(id);
+  const online=!!NET.active,verified=e.netMatchStats;
+  const tracked=(key,fallback)=>online?(Number.isFinite(verified?.[key])?Math.round(verified[key]):"—"):Math.round(fallback||0);
   const stats=[
     ["Placement", "#"+ (e.placement||1) + " / "+G.aliveStart],
     ["Eliminations", e.kills],
-    ["Damage", Math.round(e.damage)],
-    ["XP Earned", "+"+(G.matchXpEarned||0)],
-    ["Survived", fmtTime(G.elapsed)],
-    ["Shield Blocked", Math.round(e.shieldBlocked||0)],
+    ["Damage", tracked("damage",e.damage)],
+    ["XP Earned", online&&!G.serverResult?"PENDING":"+"+(G.matchXpEarned||0)],
+    ["Survived", online?(Number.isFinite(verified?.survivalSeconds)?fmtTime(verified.survivalSeconds):"—"):fmtTime(G.elapsed)],
+    ["Shield Blocked", tracked("shieldBlocked",e.shieldBlocked)],
   ].slice(0,6);
   el.innerHTML = stats.map(s=>`<div class="stat"><div class="k">${s[0]}</div><div class="v">${s[1]}</div></div>`).join("");
 }
@@ -12152,8 +13246,6 @@ function classStatBars(c){
     ["HP",   N(c.hp,80,150)],
     ["SPD",  N(c.speed,210,340)],
     ["JUMP", N(c.jump,840,1070)],
-    ["PWR",  N(c.power||1,0.85,1.25)],
-    ["DEF",  N(1.25-(c.armor||1),0,0.5)],
   ];
   return `<div class="statBars" style="margin-top:6px">`+rows.map(([lab,v])=>
     `<div style="display:flex;align-items:center;gap:5px;margin-top:2px"><span style="width:30px;font-size:8px;color:#8ea6d6;letter-spacing:.5px">${lab}</span><span style="flex:1;height:5px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden"><span style="display:block;height:100%;width:${Math.round(v*100)}%;background:${c.c}"></span></span></div>`
@@ -12161,7 +13253,7 @@ function classStatBars(c){
 }
 function buildCards(){
   const wrap=document.getElementById("cards"); wrap.innerHTML="";
-  const pad=padActive(), abKey=pad? "△":"Q";   // ability binding: Q on keyboard, △/Y on pad (CONTROL_ROWS)
+  const pad=padActive(), abKey=padGlyph("Q");
   for(const id of Object.keys(CLASSES)){
     const c=CLASSES[id]; const locked=!classUnlocked(id), needW=CLASS_UNLOCKS[id]||0;
     const card=document.createElement("div");
@@ -12190,6 +13282,7 @@ function buildCards(){
       <div class="abil">TAP <b>${abKey}</b>: <span>${c.ability}</span></div>
       <div class="abil">HOLD <b>${c.specialDir==="up"?"\u2191":"\u2190/\u2192"}</b> + <b>${abKey}</b>: <span>${c.special}</span></div>
       <div class="abil" style="font-size:9px;opacity:.7;margin-top:2px">ability cooldowns \u00d7${c.cdMult}</div>
+      <div class="mobilityTrait" style="display:flex;align-items:center;gap:5px;min-height:32px;margin-top:5px;color:${c.c};font:600 11px/1.15 'Rajdhani',sans-serif">${mobilityIconSvg(id,22)}<span>${esc(classMobilityHint(id))}</span></div>
       ${classStatBars(c)}${locked?`<div class="lockRibbon">LOCKED · WIN ${needW} WINS</div>`:""}`;
     const choose=()=>{ if(locked){ toast("WIN "+needW+" MATCHES TO UNLOCK "+c.name.toUpperCase()); if(!playSfx("ui_back",{vol:0.5})) SFX.pickup(); return; } G.chosen=id; if(!playSfx("ui_select",{vol:0.5})) SFX.pickup(); buildCards(); };
     card.onclick=choose;
