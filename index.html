@@ -322,6 +322,8 @@
   .onlineFighterCard{min-height:104px}
   .onlineFighterCopy small{white-space:normal;line-height:1.2}
   .onlineFighterCopy em{display:block;margin-top:2px;color:#8fa6cf;font:700 7px var(--body);font-style:normal;line-height:1.15}
+  #cutsceneScreen{ position:fixed; inset:0; z-index:90; background:#000; display:none; align-items:center; justify-content:center; cursor:pointer; }
+  #cutsceneScreen canvas{ display:block; }
 </style>
 </head>
 <body>
@@ -367,6 +369,7 @@
     <button id="rumbleBtn" class="sbtn" title="Controller haptics on hits, kills and damage taken (gamepad only; ignored on browsers without vibration support)">RUMBLE: ON</button>
     <button id="directorBtn" class="sbtn" title="Offline matches only: adaptive pacing gently biases bot aggression, airdrop cadence and loot toward a healthy drama curve">AI DIRECTOR: ON</button>
     <button id="controlsBtnTitle" class="sbtn">HOW TO PLAY</button>
+    <button id="cinematicBtn" class="sbtn">▶ OPENING CINEMATIC</button>
     <button id="aboutBtnTitle" class="sbtn">ABOUT / CREDITS</button>
     <button id="fsBtn" class="sbtn">⛶ FULLSCREEN</button>
   </div>
@@ -3142,6 +3145,7 @@ const MSTATE=(()=>{
   function desired(dt){
     const s=G.state;
     if(s==="victory"||s==="defeat"){ stormLatch=shopLatch=false; stormT=safeT=shopT=shopOutT=0; return s; }
+    if(s==="cutscene"){ try{ return CUTSCENE.music()||"menu"; }catch(e){ return "menu"; } }
     if(s!=="match"){ stormLatch=shopLatch=false; stormT=safeT=shopT=shopOutT=0; return "menu"; }
     const p=G.player;
     if(G.warmup) return "match";                     // warm-up skirmish: match bed (0.5x trim below)
@@ -6244,6 +6248,343 @@ const INTRO=(()=>{
     try{ document.getElementById("introScreen").style.display="none"; }catch(_e){}
   }
   return I;
+})();
+
+/* ---------------- CUTSCENE PLAYER ----------------
+   Scripted in-engine cinematics drawn from existing art. A scene is a pure
+   function of time: shots draw from local time, and captions, dialogue, audio
+   cues, shakes and flashes are plain data tables. Nothing depends on frame
+   history, so the same scene plays live (CUTSCENE.play) or renders frame-exact
+   for video export (CUTSCENE.renderAt, driven by tools/render-cutscene.mjs).
+   Logical stage is 1280x720; the canvas scales to the window and letterboxes. */
+const CUTSCENE=(()=>{
+  const W=1280, H=720, BAR=72;
+  const clamp01=v=>v<0?0:v>1?1:v;
+  const lerp=(a,b,u)=>a+(b-a)*u;
+  const E={
+    lin:u=>u, inOut:u=>u<.5?2*u*u:1-Math.pow(-2*u+2,2)/2,
+    out:u=>1-Math.pow(1-u,3), in:u=>u*u*u,
+    back:u=>{const c=1.9;return 1+(c+1)*Math.pow(u-1,3)+c*Math.pow(u-1,2);},
+  };
+  // span(t,a,b,ease): 0 before a, 1 after b
+  const span=(t,a,b,ease)=>(ease||E.lin)(clamp01((t-a)/(b-a)));
+  const hash=n=>{ const s=Math.sin(n*127.1+311.7)*43758.5453; return s-Math.floor(s); };
+
+  let g=null;                                   // active 2D context (stage coordinates)
+  const art=key=>(ASSETS[key]&&ASSETS[key].img)||null;
+  const frames=key=>(ASSETS[key]&&ASSETS[key].frames)||null;
+
+  /* ---------- drawing helpers available to shots ---------- */
+  const H_={
+    E, span, lerp, hash, W, H,
+    // image covering the stage; zoom>=1, fx/fy pick the focal point (0..1)
+    cover(key,zoom,fx,fy,alpha){
+      const im=art(key); if(!im) return;
+      const s=Math.max(W/im.width,H/im.height)*(zoom||1), dw=im.width*s, dh=im.height*s;
+      g.save(); g.globalAlpha=alpha==null?1:alpha;
+      g.drawImage(im,(W-dw)*(fx==null?.5:fx),(H-dh)*(fy==null?.5:fy),dw,dh); g.restore();
+    },
+    img(key,x,y,w,h,alpha){ const im=art(key); if(!im) return;
+      g.save(); g.globalAlpha=alpha==null?1:alpha; g.drawImage(im,x,y,w,h||im.height*w/im.width); g.restore(); },
+    // sprite strip frame; (x, foot) = bottom-centre; face<0 mirrors
+    sprite(key,idx,x,foot,h,face,glow){
+      const im=art(key), fr=frames(key); if(!im) return;
+      const f=(fr&&fr[idx])||(fr&&fr[0])||{sx:0,sy:0,sw:im.width,sh:im.height};
+      const s=h/f.sh, dw=f.sw*s;
+      g.save(); g.translate(x,foot); if(face<0) g.scale(-1,1);
+      if(glow){ g.shadowColor=glow; g.shadowBlur=18; }
+      g.drawImage(im,f.sx,f.sy,f.sw,f.sh,-dw/2,-h,dw,h); g.restore();
+    },
+    // deterministic dust/spark burst, age in seconds since impact
+    burst(x,y,age,seed,n,color,spread,life){
+      if(age<0||age>life) return;
+      g.save();
+      for(let i=0;i<n;i++){
+        const a=Math.PI+hash(seed+i)*Math.PI, sp=spread*(.35+hash(seed+i*7)*.65);
+        const px=x+Math.cos(a)*sp*age, py=y+Math.sin(a)*sp*age*.55+260*age*age;
+        const k=1-age/life; g.globalAlpha=k*.85; g.fillStyle=color;
+        const r=(2+hash(seed+i*3)*5)*(.6+k*.6); g.fillRect(px-r/2,py-r/2,r,r);
+      }
+      g.restore();
+    },
+    // storm wall sweeping in from the right; edge = x of its leading edge
+    storm(edge,t,alpha){
+      g.save(); g.globalAlpha=alpha==null?1:alpha;
+      g.beginPath(); g.moveTo(W+40,-20);
+      for(let y=-20;y<=H+20;y+=24) g.lineTo(edge+Math.sin(y*.021+t*2.3)*26+Math.sin(y*.057-t*3.1)*12,y);
+      g.lineTo(W+40,H+20); g.closePath();
+      const gr=g.createLinearGradient(edge-60,0,edge+420,0);
+      gr.addColorStop(0,"rgba(190,90,255,.0)"); gr.addColorStop(.12,"rgba(170,60,255,.55)"); gr.addColorStop(1,"rgba(40,0,80,.92)");
+      g.fillStyle=gr; g.fill();
+      g.strokeStyle="rgba(240,170,255,.85)"; g.lineWidth=3; g.shadowColor="#d96cff"; g.shadowBlur=22; g.stroke();
+      g.restore();
+    },
+    bolt(x,y0,y1,seed,alpha){
+      g.save(); g.globalAlpha=alpha; g.strokeStyle="#f6e6ff"; g.lineWidth=3; g.shadowColor="#d96cff"; g.shadowBlur=24;
+      g.beginPath(); g.moveTo(x,y0); let cx=x;
+      for(let i=1;i<=9;i++){ cx+=(hash(seed+i)-.5)*70; g.lineTo(cx,lerp(y0,y1,i/9)); }
+      g.stroke(); g.restore();
+    },
+    text(str,x,y,size,color,align,font,alpha,glow){
+      g.save(); g.globalAlpha=alpha==null?1:alpha; g.textAlign=align||"center"; g.textBaseline="middle";
+      g.font=font==="body"?"700 "+size+"px 'Rajdhani', sans-serif":size+"px 'Press Start 2P', monospace";
+      if(glow){ g.shadowColor=glow; g.shadowBlur=16; }
+      g.fillStyle=color; g.fillText(str,x,y); g.restore();
+    },
+    rect(x,y,w,h,color,alpha){ g.save(); g.globalAlpha=alpha==null?1:alpha; g.fillStyle=color; g.fillRect(x,y,w,h); g.restore(); },
+    get g(){ return g; },
+  };
+
+  /* ---------- scene library ---------- */
+  const SCENES={};
+
+  // OPENING · "STORM WARNING" — Skyport drop → storm over the Junkyard →
+  // Ninja meets hireling Crag → airdrop → title slam. ~27s, music_drop bed.
+  SCENES.opening={
+    title:"Season 0 Opening",
+    dur:27, music:"drop",
+    assets:["parallax_skyport","vehicle_sky_tram","sprite_ninja","poi_junkyard","parallax_junkyard",
+            "hireling_crag_sprite","portrait_ninja","hireling_crag_portrait","airdrop_crate","bg_title","logo"],
+    cues:[
+      {t:1.4, sfx:"zipline", vol:.35},
+      {t:4.5, sfx:"glider_open", vol:.5},
+      {t:6.0, sfx:"storm_close", vol:.7},
+      {t:7.05, sfx:"boom_small", vol:.45, pitch:.7},
+      {t:8.0, sfx:"storm_tick", vol:.4}, {t:8.6, sfx:"storm_tick", vol:.4},
+      {t:9.3, sfx:"boom_small", vol:.5, pitch:.6},
+      {t:11.0, sfx:"spawn_shield", vol:.4},
+      {t:11.6, sfx:"death_fall", vol:.25, pitch:1.4},
+      {t:12.2, sfx:"footstep_1", vol:.6}, {t:12.5, sfx:"footstep_2", vol:.6},
+      {t:12.8, sfx:"footstep_3", vol:.6}, {t:13.1, sfx:"footstep_4", vol:.6},
+      {t:13.6, sfx:"ui_move", vol:.4}, {t:15.9, sfx:"ui_move", vol:.4},
+      {t:18.3, sfx:"airdrop_flare", vol:.6},
+      {t:18.9, sfx:"airdrop_land", vol:.8}, {t:18.9, sfx:"boom_big", vol:.6},
+      {t:19.6, sfx:"crate_open", vol:.7}, {t:19.75, sfx:"pickup_mythic", vol:.6},
+      {t:20.15, sfx:"shot_rifle", vol:.5}, {t:20.35, sfx:"shot_rifle", vol:.5}, {t:20.55, sfx:"shot_rifle", vol:.5},
+      {t:21.5, sfx:"boom_impulse", vol:.7},
+      {t:22.4, sfx:"boom_holy", vol:.75},
+      {t:23.2, sfx:"countdown", vol:.35},
+    ],
+    shake:[ {t:11.62,amt:6,dur:.25}, {t:18.9,amt:16,dur:.6}, {t:22.42,amt:12,dur:.5} ],
+    flash:[ {t:7.0,dur:.25,a:.55,c:"#e8c8ff"}, {t:9.3,dur:.3,a:.6,c:"#e8c8ff"}, {t:10.9,dur:.35,a:.9,c:"#ffffff"},
+            {t:18.9,dur:.4,a:.8,c:"#fff4d0"}, {t:21.5,dur:.45,a:1,c:"#ffffff"}, {t:22.4,dur:.3,a:.6,c:"#ffe0ff"} ],
+    fades:[ {t0:0,t1:1.0,from:1,to:0}, {t0:26.0,t1:27,from:0,to:1} ],
+    captions:[
+      {t0:1.2,t1:5.2, kicker:"SKYPORT · DROP WINDOW OPEN", text:"Forty fighters. One sky tram. One way down."},
+      {t0:19.8,t1:21.4, kicker:"", text:"Loot fast. Hire muscle. Outlast everyone.", top:true},
+    ],
+    dialog:[
+      {t0:13.6,t1:15.8, who:"NINJA", portrait:"portrait_ninja", color:"#e8324a", side:"left",
+       text:"Storm's eating the east side. Ninety seconds, tops."},
+      {t0:15.9,t1:18.1, who:"CRAG · HIRELING", portrait:"hireling_crag_portrait", color:"#ffb000", side:"right",
+       text:"Eight tokens says I keep you breathing for all ninety."},
+    ],
+    shots:[
+      // A · Skyport: tram crosses, a fighter bails out the door
+      {t0:0, t1:5.5, draw(t,S){
+        S.cover("parallax_skyport",1.12+t*.012, .3+t*.04, .5);
+        const u=span(t,.2,5.5), x=lerp(-900,640,u), y=300+Math.sin(t*2.2)*6;
+        const tw=924, th=302;
+        // thruster wash
+        S.rect(x-120,y+th*.32,140,10,"#7df9ff",.25+.2*hash(Math.floor(t*30)));
+        S.rect(x-70,y+th*.55,90,8,"#ff3dff",.2+.2*hash(Math.floor(t*30)+9));
+        S.img("vehicle_sky_tram",x,y,tw,th);
+        const drop=t-4.4;
+        if(drop>0) S.sprite("sprite_ninja",4,x+tw*.55-drop*90,y+th*.8+drop*drop*420,90,1);
+      }},
+      // B · Junkyard: the storm rolls in
+      {t0:5.5, t1:11, draw(t,S){
+        const lt=t-5.5;
+        S.cover("poi_junkyard",1.0+lt*.03,.55,.45);
+        S.rect(0,0,W,H,"#1a0630",.18+lt*.03);
+        S.storm(lerp(1420,760,span(lt,0,5.5,E.out)),t);
+        if(t>7.0&&t<7.25) S.bolt(980,0,430,7,1-(t-7)/.25);
+        if(t>9.3&&t<9.6) S.bolt(860,0,520,19,1-(t-9.3)/.3);
+        const a=span(t,6.3,6.8)*(1-span(t,10.3,10.8));
+        const jx=t>6.3&&t<6.6?(hash(Math.floor(t*40))-.5)*10:0;
+        S.text("THE STORM",W/2+jx-3,300,54,"#ff3dff","center",null,a*.6);
+        S.text("THE STORM",W/2+jx+3,300,54,"#39e6ff","center",null,a*.6);
+        S.text("THE STORM",W/2+jx,300,54,"#ffffff","center",null,a,"#d96cff");
+        S.text("DOESN'T WAIT.",W/2,390,34,"#f0a2ff","center",null,span(t,7.4,7.9)*(1-span(t,10.3,10.8)),"#9d3dff");
+      }},
+      // C+D · Ground: Ninja lands, Crag walks up, airdrop, contact
+      {t0:11, t1:21.5, draw(t,S){
+        const lt=t-11, cam=lerp(0,60,span(lt,0,10.5,E.inOut)), FLOOR=610;
+        const sky=g.createLinearGradient(0,0,0,FLOOR);
+        sky.addColorStop(0,"#2a0a4a"); sky.addColorStop(.6,"#1b1640"); sky.addColorStop(1,"#0d1024");
+        g.fillStyle=sky; g.fillRect(0,0,W,H);
+        S.cover("poi_junkyard",1.15,.4-cam/2000,.2,.45);
+        S.rect(0,0,W,H,"#1a0a3a",.35);
+        S.storm(1080-lt*6,t,.75);
+        const pj=art("parallax_junkyard");
+        if(pj){ const s=1.35*W/pj.width, dh=pj.height*s; S.img("parallax_junkyard",-120-cam*.4,FLOOR+50-dh,pj.width*s,dh); }
+        // floor
+        S.rect(0,FLOOR,W,H-FLOOR,"#0a0d1c");
+        S.rect(0,FLOOR,W,3,"#39e6ff",.8);
+        for(let i=0;i<14;i++) S.rect(((i*137-cam*1.0)%(W+140)+W+140)%(W+140)-70,FLOOR+18+(i%3)*22,60,3,"#1d2850");
+        // Ninja: falls in, idles; hops on crate impact
+        const nx=440-cam, land=11.6;
+        let nf=0, nfoot=FLOOR;
+        if(t<land){ nf=4; nfoot=lerp(-60,FLOOR,span(t,11,land,E.in)); }
+        else if(t>=18.9&&t<19.45){ nf=3; nfoot=FLOOR-Math.sin((t-18.9)/.55*Math.PI)*70; }
+        else if(t>=20.0&&t<20.9) nf=5;
+        S.sprite("sprite_ninja",nf,nx,nfoot,290,1);
+        S.burst(nx,FLOOR,t-land,3,18,"#9fb3d8",260,.6);
+        // Crag: runs in from the right, idles facing Ninja, fires right on cue
+        const arrive=13.4, cx=lerp(1480,900,span(t,12.0,arrive,E.out))-cam;
+        let cf=0, cface=-1;
+        if(t>=12.0&&t<arrive) cf=Math.floor(t*9)%2?1:2;
+        if(t>=18.9&&t<19.25) cf=6;
+        if(t>=20.05&&t<20.9){ cf=5; cface=1; }
+        S.sprite("hireling_crag_sprite",cf,cx,FLOOR,300,cface);
+        if(cf===5){ const k=(t-20.05)%.2; if(k<.07){
+          g.save(); g.globalAlpha=1-k/.07; g.fillStyle="#fff2a0"; g.shadowColor="#ffd166"; g.shadowBlur=26;
+          g.beginPath(); g.arc(cx+142,FLOOR-168,16,0,6.283); g.fill(); g.restore();
+          S.rect(cx+156,FLOOR-170,W,3,"#ffe9a8",.8-k*8); } }
+        // Airdrop crate
+        const cxr=665-cam, hit=18.9;
+        if(t>=18.2){
+          const sh=span(t,18.2,hit); g.save(); g.globalAlpha=.5*sh; g.fillStyle="#000";
+          g.beginPath(); g.ellipse(cxr,FLOOR+4,90*sh,10*sh,0,0,6.283); g.fill(); g.restore();
+          const cy=t<hit?lerp(-200,FLOOR,span(t,18.4,hit,E.in)):FLOOR;
+          if(t<hit) S.rect(cxr-2,0,4,cy-120,"#ffd166",.5);
+          if(t>=19.6){ const b=span(t,19.6,20.0,E.out)*(1-span(t,21.0,21.5));
+            const gr=g.createLinearGradient(0,0,0,FLOOR); gr.addColorStop(0,"rgba(255,209,102,0)"); gr.addColorStop(1,"rgba(255,209,102,.75)");
+            g.save(); g.globalAlpha=b; g.fillStyle=gr; g.fillRect(cxr-46*b,0,92*b,FLOOR-40); g.restore(); }
+          S.img("airdrop_crate",cxr-80,cy-150,160,160);
+          S.burst(cxr,FLOOR,t-hit,40,34,"#c8b48a",520,.9);
+          S.burst(cxr,FLOOR-60,t-19.6,80,26,"#ffd166",380,.8);
+        }
+      }},
+      // E · Key art + logo slam
+      {t0:21.5, t1:27, draw(t,S){
+        const lt=t-21.5;
+        S.cover("bg_title",lerp(1.25,1.02,span(lt,0,4.5,E.out)),.5,.45);
+        S.rect(0,0,W,H,"#05030f",.35);
+        const lg=art("logo");
+        if(lg&&t>=22.0){ const u=span(t,22.0,22.45,E.back), s=lerp(3,1,u), lw=520*s, lh=lw*lg.height/lg.width;
+          g.save(); g.globalAlpha=span(t,22.0,22.12); g.shadowColor="#39e6ff"; g.shadowBlur=30;
+          g.drawImage(lg,W/2-lw/2,300-lh/2,lw,lh); g.restore(); }
+        const tag="SEASON 0 · DROP IN.", n=Math.floor(clamp01((t-23.2)/1.1)*tag.length);
+        S.text(tag.slice(0,n),W/2,556,22,"#ffe066","center",null,1,"#ff3dff");
+      }},
+    ],
+  };
+
+  /* ---------- frame renderer (pure in t) ---------- */
+  function drawCaption(c,t,S){
+    const a=span(t,c.t0,c.t0+.35)*(1-span(t,c.t1-.35,c.t1)); if(a<=0) return;
+    const n=Math.floor(clamp01((t-c.t0-.2)/Math.max(.6,c.text.length/38))*c.text.length);
+    if(c.top){ S.text(c.text.slice(0,n),W/2,BAR+70,34,"#ffffff","center","body",a,"#ff3dff"); return; }
+    if(c.kicker) S.text(c.kicker,72,H-BAR-78,13,"#39e6ff","left",null,a);
+    S.text(c.text.slice(0,n),72,H-BAR-40,26,"#ffffff","left","body",a);
+  }
+  function drawDialog(d,t,S){
+    const a=span(t,d.t0,d.t0+.25,E.out)*(1-span(t,d.t1-.2,d.t1)); if(a<=0) return;
+    const pw=880, ph=124, px=(W-pw)/2, py=BAR+40-(1-a)*20, left=d.side!=="right";
+    g.save(); g.globalAlpha=a;
+    g.fillStyle="rgba(5,8,24,.9)"; g.strokeStyle=d.color; g.lineWidth=3; g.shadowColor=d.color; g.shadowBlur=14;
+    g.beginPath(); if(g.roundRect) g.roundRect(px,py,pw,ph,10); else g.rect(px,py,pw,ph); g.fill(); g.stroke(); g.restore();
+    const im=art(d.portrait), ps=148, ix=left?px-30:px+pw-ps+30, iy=py-12;
+    if(im){ g.save(); g.globalAlpha=a; g.drawImage(im,ix,iy,ps,ps); g.restore(); }
+    const tx=left?px+136:px+30;
+    S.text(d.who,tx,py+28,13,d.color,"left",null,a);
+    const n=Math.floor(clamp01((t-d.t0-.15)/Math.max(.5,d.text.length/40))*d.text.length);
+    S.text(d.text.slice(0,n),tx,py+74,28,"#eaf2ff","left","body",a);
+  }
+  function renderScene(sc,t,opt){
+    const S=H_; opt=opt||{};
+    g.save(); g.fillStyle="#000"; g.fillRect(0,0,W,H);
+    // camera shake (deterministic)
+    let sx=0, sy=0; const shakeOk=opt.export||typeof G==="undefined"||G.shakeOn!==false;
+    if(shakeOk) for(const s of sc.shake||[]){ const k=t-s.t; if(k>=0&&k<s.dur){ const m=s.amt*(1-k/s.dur);
+      sx+=(hash(Math.floor(t*60)+s.t)-.5)*2*m; sy+=(hash(Math.floor(t*60)*3+s.t)-.5)*2*m; } }
+    g.translate(sx,sy);
+    for(const sh of sc.shots) if(t>=sh.t0&&t<sh.t1){ g.save(); sh.draw(t,S); g.restore(); }
+    g.restore();
+    for(const c of sc.captions||[]) drawCaption(c,t,S);
+    for(const d of sc.dialog||[]) drawDialog(d,t,S);
+    const flashK=(opt.export||typeof G==="undefined"||!G.reducedFlash)?1:.3;
+    for(const f of sc.flash||[]){ const k=t-f.t; if(k>=0&&k<f.dur) S.rect(0,0,W,H,f.c,f.a*flashK*(1-k/f.dur)); }
+    // letterbox bars ease in, then fades on top of everything
+    const bar=BAR*span(t,0,.6,E.out);
+    S.rect(0,0,W,bar,"#000"); S.rect(0,H-bar,W,bar,"#000");
+    for(const f of sc.fades||[]) if(t>=f.t0&&t<=f.t1) S.rect(0,0,W,H,"#000",lerp(f.from,f.to,span(t,f.t0,f.t1)));
+    if(t>=sc.dur) S.rect(0,0,W,H,"#000");
+    if(opt.ui) S.text("SKIP ▸ ANY KEY",W-40,H-BAR/2,11,"#7f93bd","right",null,.85*(1-span(t,4,5)));
+  }
+
+  /* ---------- runtime ---------- */
+  let el=null, cv=null, live=null;
+  function mount(){
+    if(el) return;
+    el=document.createElement("div"); el.id="cutsceneScreen";
+    cv=document.createElement("canvas"); cv.setAttribute("role","img"); cv.setAttribute("aria-label","Cutscene");
+    el.appendChild(cv); document.body.appendChild(el);
+    el.addEventListener("pointerdown",e=>{ e.preventDefault(); skip(); });
+  }
+  function size(pw,ph){
+    const dpr=pw?1:Math.min(2,window.devicePixelRatio||1);
+    const vw=pw||innerWidth, vh=ph||innerHeight, k=Math.min(vw/W,vh/H);
+    cv.width=Math.round(W*k*dpr); cv.height=Math.round(H*k*dpr);
+    cv.style.width=Math.round(W*k)+"px"; cv.style.height=Math.round(H*k)+"px";
+    g=cv.getContext("2d"); g.setTransform(cv.width/W,0,0,cv.height/H,0,0); g.imageSmoothingQuality="high";
+  }
+  function ready(id){
+    const sc=SCENES[id]; if(!sc) return Promise.reject(new Error("unknown scene "+id));
+    const wait=[];
+    for(const key of sc.assets){
+      if(ASSETS[key]) continue;
+      wait.push(new Promise(res=>{
+        if(!LOADSTATE.settled[key]) LOADSTATE.total++;
+        registerAsset(key,"assets/"+key+HOSTED_ASSET_EXT,res);
+        setTimeout(res,8000);                    // a missing file must not hang the scene
+      }));
+    }
+    const fonts=(document.fonts&&document.fonts.load)?Promise.all([document.fonts.load("20px 'Press Start 2P'"),document.fonts.load("700 28px 'Rajdhani'")]).catch(()=>{}):null;
+    return Promise.all(wait.concat(fonts?[fonts]:[]));
+  }
+  function onKey(e){ if(!live) return; e.preventDefault(); e.stopImmediatePropagation(); if(!e.repeat) skip(); }
+  function skip(){ if(live) finish(); }
+  function finish(){
+    const L=live; live=null; if(!L) return;
+    removeEventListener("keydown",onKey,true);
+    el.style.display="none";
+    try{ (L.onEnd||(()=>showScreen("title")))(); }catch(e){}
+  }
+  function play(id,opts){
+    const sc=SCENES[id]; if(!sc||live) return false;
+    mount(); opts=opts||{};
+    for(const k in screens){ const s=screens[k]; if(s) document.getElementById(s).classList.add("hidden"); }
+    G.state="cutscene"; el.style.display="flex"; size();
+    try{ MUSICFILES.load(sc.music); }catch(e){}
+    const L=live={id,sc,onEnd:opts.onEnd,start:0,prev:-1,padHeld:true};
+    addEventListener("keydown",onKey,true);
+    ready(id).then(()=>{ if(live!==L) return; L.start=performance.now(); requestAnimationFrame(frame); });
+    g.fillStyle="#000"; g.fillRect(0,0,W,H);
+    return true;
+  }
+  function frame(now){
+    const L=live; if(!L) return;
+    const t=(now-L.start)/1000;
+    if(cv.clientWidth!==Math.round(W*Math.min(innerWidth/W,innerHeight/H))) size();
+    for(const c of L.sc.cues) if(c.t>L.prev&&c.t<=t) playSfx(c.sfx,{vol:c.vol,pitch:c.pitch});
+    L.prev=t;
+    try{ const gp=getPad(); const any=!!(gp&&gp.buttons.some(b=>b&&b.pressed));
+      if(any&&!L.padHeld){ skip(); return; } L.padHeld=any; }catch(e){}
+    renderScene(L.sc,t,{ui:true});
+    if(t>=L.sc.dur){ finish(); return; }
+    requestAnimationFrame(frame);
+  }
+  // Export hook: draw one exact frame at an explicit output size, no UI.
+  function renderAt(id,t,pw,ph){
+    const sc=SCENES[id]; mount(); el.style.display="flex";
+    if(!cv.width||cv.width!==pw||cv.height!==ph) size(pw,ph);
+    renderScene(sc,t,{export:true});
+  }
+  function info(id){ const sc=SCENES[id]; return sc&&{id,title:sc.title,dur:sc.dur,music:sc.music,cues:sc.cues.slice()}; }
+  return { play, skip, ready, renderAt, info, scenes:()=>Object.keys(SCENES), active:()=>!!live,
+    music:()=>live?live.sc.music:null, SCENES };
 })();
 
 /* ---------------- Pixel sprite system ---------------- */
@@ -13403,6 +13744,7 @@ document.getElementById("restartBtn").onclick=()=>confirmPauseAction("restartBtn
 document.getElementById("quitBtn").onclick=()=>confirmPauseAction("quitBtn",NET.active?"✕ LEAVE MATCH":G.warmup==="queue"?"✕ LEAVE QUEUE":G.warmup?"✕ QUIT TO TITLE":"✕ QUIT TO MENU",()=>{ setPaused(false); confParts=[];finalizeEliminationLog();G.spectating=false;G.specTarget=null;G.deathSeq=null;if(G.warmup){quitWarmup();return;}if(NET.active){NET.leave();return;}showScreen("title"); refreshCareer(); });
 document.getElementById("controlsBtnPause").onclick=()=>{ showControls(true); };
 document.getElementById("controlsBtnTitle").onclick=()=>{ showControls(true); };
+document.getElementById("cinematicBtn").onclick=()=>{ playSfx("ui_select",{vol:0.6}); CUTSCENE.play("opening"); };
 document.getElementById("controlsCloseBtn").onclick=()=>{ showControls(false); };
 document.getElementById("aboutBtnTitle").onclick=()=>{ showRelease(true); };
 document.getElementById("releaseCloseBtn").onclick=()=>{ showRelease(false); };
@@ -13438,6 +13780,7 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 if(G.state!=="intro") showScreen("title"); // intro gate reveals the title itself
+try{ const cs=new URLSearchParams(location.search).get("cutscene"); if(cs&&CUTSCENE.scenes().includes(cs)&&!/[?&]export=1/.test(location.search)) CUTSCENE.play(cs); }catch(e){}
 refreshCareer();
 requestAnimationFrame(loop);
 /* rev: bugfix pass - tram eject latch, car exit, rider draw order */
