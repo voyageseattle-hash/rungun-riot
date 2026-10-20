@@ -1,0 +1,52 @@
+{
+  "project": "RunGun Riot",
+  "purpose": "Carry confirmed Season Zero voice decisions into game audio work",
+  "source_session": "https://claude.ai/code/session_01W3hE6S2jGvZB6jHowE2Jwc",
+  "prepared_date": "2026-10-20",
+  "confirmed_user_choices": {
+    "Jimo": {
+      "audition_choice": "C",
+      "engine": "Kokoro",
+      "base_voice": "Liam",
+      "direction": "Pitched younger/up and faster; cockier",
+      "pronunciation": "Jim-O",
+      "reference_audio": "reference/jimo-voice-audition.mp3",
+      "exact_pitch_and_speed_values": null,
+      "reference_sha256": "442cfc274d8774363757c268fe65e116d44e500e12873fd69aeb472df8af664c"
+    },
+    "Demolitionist": {
+      "audition_choice": "C",
+      "engine": "Kokoro",
+      "base_voice": "Michael",
+      "direction": "Husky, deep chest resonance with grit",
+      "reference_audio": "reference/demolitionist-voice-audition.mp3",
+      "exact_filter_values": null,
+      "reference_sha256": "a38582cd153d4d8715c24f834d36e436d56e9d3e27cc6dc3a98a0ebf7a341e5d"
+    }
+  },
+  "pacing_decision": {
+    "direction": "Generate dialogue one sentence at a time and retain natural pauses; preserve comma breathing room",
+    "period_pause_seconds_approx": 0.4,
+    "question_pause_seconds_approx": 0.5,
+    "interrupted_line_pause": "A short beat after an em dash",
+    "scope": "Confirmed for later shorts and the Season Zero v2 remake"
+  },
+  "other_cast_reported_by_claude": {
+    "Jumper": "Adam, energetic",
+    "Blaster": "Echo with a metallic machine filter",
+    "Builder": "Sarah",
+    "Crowd": "Mixed group voices"
+  },
+  "evidence_notes": {
+    "user_choices": "Jimo audition and selection confirmed in authenticated chat messages 62 and 65–66; Demolitionist selection C confirmed in cached public responses.",
+    "pacing_pronunciation_and_other_cast": "Authenticated chat read during recovery: diction fix, same-voices response, and user correction that Jimo is pronounced Jim-O. Other cast entries record Claude’s stated cast; no separate user audition choice was recovered for them."
+  },
+  "limitations": [
+    "The auditions contain several options; C is the chosen option for each.",
+    "Exact synthesis parameters, voice IDs, filter chains, source scripts and generated per-line WAVs have not been recovered.",
+    "Additional character voices, including Warlord, are not established by this handoff.",
+    "Reconcile with the current game audio configuration before making changes."
+  ],
+  "suggested_repository_path": "docs/audio/voice-decisions.json",
+  "handoff_instruction": "Record these confirmed decisions in the game repository and use them when preparing game dialogue. Preserve the selected voices. Inspect existing cast configuration first, and identify missing exact parameters instead of guessing."
+}
